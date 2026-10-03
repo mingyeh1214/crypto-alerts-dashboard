@@ -23,8 +23,11 @@ type WatchRow = {
   status: string;
   alert_time: string;
   alert_price: number;
+  m5_status: string | null;
+  m5_sent: boolean;
   m15_status: string | null;
   m15_sent: boolean;
+  entry_tf: string | null;
   m4h_sent: boolean;
   m1d_sent: boolean;
   end_reason: string | null;
@@ -110,7 +113,7 @@ export function LiveBoard() {
         </div>
         <div className="card">
           <b>{meta.bars_ready ?? "…"}</b>
-          <span>15 分暖機完成（可觸發）</span>
+          <span>90 日基準就緒（可觸發）</span>
         </div>
         <div className="card">
           <b>{meta.oi_ready ?? "…"}</b>
@@ -129,7 +132,7 @@ export function LiveBoard() {
 
       <h2>最近警報</h2>
       <p className="note">
-        含舊規則留下的紀錄（箱型、量價）。目前啟用的規則只有 quiet_surge_early
+        新的進場是 1 分收盤（安靜後放量）。表裡仍可能有舊的 15 分進場與更早的箱型、量價紀錄。目前啟用的規則只有 quiet_surge_early
         {data ? `（其他啟用 ${data.rules_enabled_other} 條）` : ""}。
         全市場上線後，新的進場才會出現在這裡。
       </p>
@@ -170,6 +173,7 @@ export function LiveBoard() {
               <th className="left">幣</th>
               <th className="left">狀態</th>
               <th>價</th>
+              <th className="left">+5 分</th>
               <th className="left">+15 分</th>
               <th>+4 時</th>
               <th>+1 日</th>
@@ -183,6 +187,7 @@ export function LiveBoard() {
                 <td className="left">{wrow.symbol}</td>
                 <td className="left">{STATUS[wrow.status] ?? wrow.status}</td>
                 <td>{wrow.alert_price}</td>
+                <td className="left">{wrow.m5_status ? (STATUS[wrow.m5_status] ?? wrow.m5_status) : "—"}</td>
                 <td className="left">{wrow.m15_status ? (STATUS[wrow.m15_status] ?? wrow.m15_status) : "—"}</td>
                 <td>{wrow.m4h_sent ? "已送" : "—"}</td>
                 <td>{wrow.m1d_sent ? "已送" : "—"}</td>
@@ -190,7 +195,7 @@ export function LiveBoard() {
               </tr>
             ))}
             {data && data.recent_watches.length === 0 ? (
-              <tr><td className="left" colSpan={8}>目前沒有追蹤紀錄</td></tr>
+              <tr><td className="left" colSpan={9}>目前沒有追蹤紀錄</td></tr>
             ) : null}
           </tbody>
         </table>

@@ -18,6 +18,7 @@ as $$
       a.telegram_sent,
       a.payload,
       w.status as watch_status,
+      w.m5_status,
       w.m15_status,
       w.m4h_sent,
       w.m1d_sent,
@@ -25,7 +26,7 @@ as $$
       w.alert_time
     from alerts a
     left join lateral (
-      select status, m15_status, m4h_sent, m1d_sent, end_reason, alert_time
+      select status, m5_status, m15_status, m4h_sent, m1d_sent, end_reason, alert_time
       from alert_watches
       where alert_id = a.id
       order by id desc
@@ -57,6 +58,8 @@ as $$
           'bar_close', coalesce(
             e.alert_time,
             case
+              when e.payload->>'timeframe' = '1m' and e.payload->>'bar_1m_open' is not null
+                then (e.payload->>'bar_1m_open')::timestamptz + interval '1 minute'
               when e.payload->>'bar_15m_open' is not null
                 then (e.payload->>'bar_15m_open')::timestamptz + interval '15 minutes'
               else e.triggered_at
@@ -72,10 +75,12 @@ as $$
           'oi_z', nullif(e.payload->>'oi_z7', '')::double precision,
           'telegram_sent', e.telegram_sent,
           'watch_status', e.watch_status,
+          'm5_status', e.m5_status,
           'm15_status', e.m15_status,
           'm4h_sent', e.m4h_sent,
           'm1d_sent', e.m1d_sent,
           'end_reason', e.end_reason,
+          'ret_5m', (select f.ret from follows f where f.entry_id = e.id and f.kind = 'm5' limit 1),
           'ret_15m', (select f.ret from follows f where f.entry_id = e.id and f.kind = 'm15' limit 1),
           'ret_4h', (select f.ret from follows f where f.entry_id = e.id and f.kind = 'm4h' limit 1),
           'ret_1d', (select f.ret from follows f where f.entry_id = e.id and f.kind = 'm1d' limit 1)

@@ -7,7 +7,7 @@ export default function StrategyPage() {
     <main>
       <h1>正式規則</h1>
       <p className="lead">
-        規則代號 <code>quiet_surge_early</code>。只在現貨 15 分 K 走完的那一分鐘評估。
+        規則代號 <code>quiet_surge_early</code>。每根現貨 1 分 K 收盤就評估，不等 15 分走完。
         合約持倉用來確認，不拿來單獨進場。下面是線上 worker 實際使用的門檻。
       </p>
 
@@ -18,16 +18,16 @@ export default function StrategyPage() {
             <tr><th className="left">項目</th><th className="left">條件</th></tr>
           </thead>
           <tbody>
-            <tr><td className="left">節奏</td><td className="left">只在 15 分收盤評估。1 分 K 不是觸發條件。</td></tr>
-            <tr><td className="left">成交額</td><td className="left">當根 15 分的 quote。即時用 1 分 close×volume 加總；暖機用 REST quoteAssetVolume。</td></tr>
-            <tr><td className="left">基準</td><td className="left">先前正好 8640 根已完成 15 分（約 90 日）的平均成交額。不滿 90 日不觸發。</td></tr>
-            <tr><td className="left">放量</td><td className="left">當根成交額 ≥ 基準的 10 倍。</td></tr>
-            <tr><td className="left">安靜</td><td className="left">前 4 根（1 小時）與前 16 根（4 小時）成交額中位，都 ≤ 基準的 3 倍。</td></tr>
-            <tr><td className="left">轉強</td><td className="left">當根收漲 ≥ +1%（相對前一根收盤）。</td></tr>
-            <tr><td className="left">還沒跑遠</td><td className="left">前 24 小時漲幅（前一根收盤 vs 再往前 96 根）≤ +8%。</td></tr>
-            <tr><td className="left">OI 方向</td><td className="left">USDT-M 持倉張數（sumOpenInterest，不是 USDT 名目）。近 1 小時（4 根）變化 &gt; 0。</td></tr>
-            <tr><td className="left">OI 異常</td><td className="left">當根 15 分 OI 變化百分比，相對前 7 日（672 根，不含當根）的 z ≥ 1。至少要 200 個有效樣本，否則不算。</td></tr>
-            <tr><td className="left">OI 時效</td><td className="left">對到該根收盤的快照不能舊於 30 分鐘。</td></tr>
+            <tr><td className="left">節奏</td><td className="left">每根 1 分收盤評估，當下就發 Telegram。5 分、15 分是進場之後的驗證，不是進場條件。</td></tr>
+            <tr><td className="left">成交額</td><td className="left">這一分鐘的 close×volume。90 日基準仍用已完成 15 分的 quoteAssetVolume（即時不足時用 1 分累加）。</td></tr>
+            <tr><td className="left">基準</td><td className="left">先前正好 8640 根已完成 15 分（約 90 日）的平均成交額。平常 1 分 = 這個平均 ÷ 15。不滿 90 日不觸發。</td></tr>
+            <tr><td className="left">放量</td><td className="left">這一分鐘 ≥ 平常 1 分的 10 倍（大約是一整根 90 日 15 分均量的 67%）。門檻故意高，避免每根 1 分都在叫。</td></tr>
+            <tr><td className="left">安靜</td><td className="left">已完成的 15 分：前 4 根（1 小時）與前 16 根（4 小時）成交額中位，都 ≤ 15 分基準的 3 倍。正在走的那根不算進去。</td></tr>
+            <tr><td className="left">轉強</td><td className="left">1 分收盤相對前一根已完成 15 分收盤 ≥ +1%，而且這一分鐘本身不是收跌。</td></tr>
+            <tr><td className="left">還沒跑遠</td><td className="left">前 24 小時漲幅（上一根 15 分收盤 vs 再往前 96 根）≤ +8%。</td></tr>
+            <tr><td className="left">OI 方向</td><td className="left">USDT-M 持倉張數（sumOpenInterest，不是 USDT 名目）。即時張數相對約 1 小時前 &gt; 0。</td></tr>
+            <tr><td className="left">OI 異常</td><td className="left">從這根 15 分開始到現在的 OI 變化百分比，相對前 7 日 15 分 OI 變化（不含這一檔）的 z ≥ 1。至少 200 個有效樣本。</td></tr>
+            <tr><td className="left">OI 時效</td><td className="left">即時快照不能舊於 30 分鐘。量價沒過的分鐘不會去抓 OI。</td></tr>
             <tr><td className="left">冷卻</td><td className="left">同一幣 60 分鐘內不重複發進場。追蹤進行中也不發新的進場。</td></tr>
           </tbody>
         </table>
@@ -38,7 +38,7 @@ export default function StrategyPage() {
         <li>幣安現貨 USDT，狀態交易中，且有同名（或對應）U 本位永續，才能即時拉 OI。</li>
         <li>槓桿代幣、穩定幣排除。純現貨沒有永續的不進這套線上規則。</li>
         <li>目前啟用約 360 檔。其中約 356 檔 15 分歷史滿 90 日；其餘規則在，但基準不夠，不會響。</li>
-        <li>1 分 K 不再逐筆寫進資料庫，避免全市場寫入量。警報與追蹤仍寫入。</li>
+        <li>每根 1 分 K 與指標會寫進資料庫。警報與追蹤另外寫入。評估本身仍在記憶體，不必先讀庫。</li>
       </ul>
 
       <h2>進場之後</h2>
@@ -48,16 +48,18 @@ export default function StrategyPage() {
             <tr><th className="left">時點</th><th className="left">做什麼</th></tr>
           </thead>
           <tbody>
-            <tr><td className="left">進場當下</td><td className="left">記下 15 分開盤時間、收盤價、當根成交額、90 日基準、進場 OI 張數。Telegram 標題為「安靜後放量初期」，severity = critical。</td></tr>
-            <tr><td className="left">下一根 15 分走完</td><td className="left">有效：收盤高於警報價，且成交額 ≥ 警報當根的 35%。觀察：沒跌破但量縮或持平，追蹤繼續。失效撤銷：收盤仍低於警報價且量 &lt; 35%，結束。收盤跌破但量沒縮，也視為失效並結束。</td></tr>
+            <tr><td className="left">進場當下</td><td className="left">1 分收盤就發。記下這一分鐘、收盤價、成交額、90 日 15 分基準、進場 OI 張數。Telegram 標題「安靜後放量初期」，severity = critical。</td></tr>
+            <tr><td className="left">+5 分</td><td className="left">進場後連續 5 根 1 分。有效：收盤高於警報價，且每分鐘成交額 ≥ 進場那一分的 35%。觀察：沒跌破但量縮或持平。失效撤銷：收盤仍低且量 &lt; 35%，結束。跌破但量沒縮也結束。</td></tr>
+            <tr><td className="left">+15 分</td><td className="left">進場後連續 15 根 1 分，再用同一套有效／觀察／失效驗證一次。這不是進場訊號。</td></tr>
             <tr><td className="left">之後每一根 15 分</td><td className="left">收盤 &lt; 警報價 → 只發一次失效，結束追蹤，不再發 +4 小時／+1 日。</td></tr>
-            <tr><td className="left">+4 小時、+1 日</td><td className="left">各一則摘要：相對警報價的報酬、這一根成交額相對 90 日基準、OI 相對進場是增倉或減倉。+1 日送出後狀態改 completed。</td></tr>
+            <tr><td className="left">+4 小時、+1 日</td><td className="left">各一則摘要：相對警報價的報酬、該根 15 分成交額相對 90 日基準、OI 相對進場是增倉或減倉。+1 日送出後狀態改 completed。</td></tr>
           </tbody>
         </table>
       </div>
       <p className="note">
         追蹤訊息另寫入 <code>alerts</code>（alert_type = quiet_surge_watch，rule_id 空），不拉長進場冷卻。
-        重啟後用已暖機的 15 分補發還沒送過的里程碑，每個只記一次。
+        9 月回測表仍是舊的 15 分進場模擬，用來對照，不是現在的發送節奏。
+        改版前已打開的追蹤若還在，第一檢仍是舊的 +15 分；新進場才是 +5 分然後 +15 分。
       </p>
 
       <h2>OI 從哪來</h2>

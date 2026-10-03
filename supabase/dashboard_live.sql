@@ -48,7 +48,7 @@ as $$
     'recent_watches', (
       select coalesce(jsonb_agg(to_jsonb(w) order by w.alert_time desc), '[]'::jsonb)
       from (
-        select id, symbol, market_type, status, alert_time, alert_price, m15_status, m15_sent, m4h_sent, m1d_sent, end_reason, ended_at
+        select id, symbol, market_type, status, alert_time, alert_price, entry_tf, m5_status, m5_sent, m15_status, m15_sent, m4h_sent, m1d_sent, end_reason, ended_at
         from alert_watches
         order by coalesce(alert_time, created_at) desc
         limit 30

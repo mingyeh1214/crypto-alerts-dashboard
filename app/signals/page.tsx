@@ -9,7 +9,8 @@ export default function SignalsPage() {
       <h1>訊號／紀錄</h1>
       <p className="lead">
         安靜後放量初期（quiet_surge_early，含合約 OI）從台北 2026-09-01 到現在的每一筆。
-        9 月到回測截止日來自全市場模擬；之後 worker 寫進資料庫的進場會每分鐘併進來，不用重新部署。
+        9 月到回測截止日是 15 分規則的全市場模擬。線上從這次改版起改為 1 分收盤進場，
+        +5 分先驗證、+15 分再驗證；新進場仍會每分鐘併進來。
       </p>
       <SignalLog />
     </main>

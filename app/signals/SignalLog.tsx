@@ -50,6 +50,7 @@ type LiveEntry = {
   oi_z: number | null;
   telegram_sent: boolean;
   watch_status: string | null;
+  m5_status: string | null;
   m15_status: string | null;
   m4h_sent: boolean | null;
   m1d_sent: boolean | null;
@@ -90,6 +91,7 @@ type EventRow = {
   max_dn: number | null;
   telegram_sent: boolean | null;
   watch_status: string | null;
+  m5_status: string | null;
   m15_status: string | null;
   end_reason: string | null;
 };
@@ -212,6 +214,7 @@ function merge(hist: HistRow[], live: LiveEntry[]): EventRow[] {
       max_dn: r.max_dn,
       telegram_sent: null,
       watch_status: null,
+      m5_status: null,
       m15_status: null,
       end_reason: null,
     });
@@ -246,6 +249,7 @@ function merge(hist: HistRow[], live: LiveEntry[]): EventRow[] {
         max_dn: null,
         telegram_sent: e.telegram_sent,
         watch_status: e.watch_status,
+        m5_status: e.m5_status,
         m15_status: e.m15_status,
         end_reason: e.end_reason,
       });
@@ -268,6 +272,7 @@ function merge(hist: HistRow[], live: LiveEntry[]): EventRow[] {
       ret_1d: pick(e.ret_1d, prev.ret_1d),
       telegram_sent: e.telegram_sent,
       watch_status: e.watch_status,
+      m5_status: e.m5_status ?? prev.m5_status,
       m15_status: e.m15_status,
       end_reason: e.end_reason,
     });
@@ -489,7 +494,7 @@ export function SignalLog() {
     <section className="explorer">
       <p className="note">
         回測檔窗口 {hist.window_start} → {hist.window_end}（台北）。
-        即時進場從 Supabase <code>dashboard_signals</code> 每 60 秒合併，同一幣、同一根 15 分收線只留一列。
+        即時進場從 Supabase <code>dashboard_signals</code> 每 60 秒合併。回測列以 15 分收線對齊；新的線上進場是 1 分收盤。
         上次抓取：{liveAt ? taipei(liveAt) : "…"}
         {liveErr ? <span className="err">　即時更新失敗（仍顯示回測）：{liveErr}</span> : null}
         {latest ? `　目前最新一筆 ${latest}` : null}
@@ -705,6 +710,7 @@ export function SignalLog() {
                       <td className={cls(r.ret_1h)}>{pct(r.ret_1h)}</td>
                       <td className="left">
                         {r.watch_status ? STATUS[r.watch_status] ?? r.watch_status : "—"}
+                        {r.m5_status ? ` · +5分${STATUS[r.m5_status] ?? r.m5_status}` : ""}
                         {r.m15_status ? ` · +15分${STATUS[r.m15_status] ?? r.m15_status}` : ""}
                         {r.end_reason ? ` · ${r.end_reason}` : ""}
                       </td>
@@ -746,7 +752,7 @@ export function SignalLog() {
       </div>
       <p className="note">
         預設只看 OI 通過（線上規則）。「僅現貨」是回測裡沒有永續 OI 的對照，不會出現在 Telegram。
-        即時列的 +15 分／+4 時／+1 日會在追蹤訊息寫入後補上；最大漲／跌只有回測有。
+        回測的「+15 分」是舊規則進場後 15 分報酬。線上新單的 +5 分、+15 分寫在追蹤欄（先驗證、再驗證），+4 時／+1 日仍是摘要。最大漲／跌只有回測有。
         點幣別可鎖定該檔。不是投資建議。
       </p>
     </section>
