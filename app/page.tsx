@@ -50,6 +50,7 @@ export default function HomePage() {
         <div className="card"><b>−$1.26</b><span>+1 日中位（$100）</span></div>
         <div className="card"><b>+19%</b><span>警報後最大漲幅中位</span></div>
       </div>
+      <p><Link href="/signals">9 月至今的訊號紀錄（持續更新） →</Link></p>
       <p><Link href="/backtests">回測頁與原始報告 →</Link></p>
       <p className="note">這不是投資建議。中位報酬偏弱，少數路徑漲幅很大；存活偏差：已下架的幣不在樣本裡。</p>
     </main>
