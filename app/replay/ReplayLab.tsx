@@ -65,7 +65,7 @@ const LIVE: Params = {
   oi_1h_bars: 12,
   oi_z_lookback: 2016,
   oi_z_min_periods: 600,
-  baseline_bars: 8640,
+  baseline_bars: 2880,
   quiet_1h_bars: 4,
   quiet_4h_bars: 16,
   require_prior_24h: true,
@@ -153,8 +153,8 @@ export function ReplayLab() {
         </div>
       </div>
       <p className="note">
-        線上是 90 日（8640 根 15 分）基準、前 24h 上限、OI z 至少約 600 根 5 分。
-        資料庫的 1 分 K 與 5 分 OI 都還短，用線上參數多半是 0 筆。
+        線上是 30 日（2880 根 15 分）基準、前 24h 上限、OI z 仍是約 7 日（2016 根 5 分，至少約 600 根）。
+        基準已對齊資料庫大約 30 日的 1 分 K。剛補齊的視窗裡，要先累滿 2880 根才評得到最新那段。
         「配合目前資料」把基準降到 8 根、略過 24h、OI 樣本降到 30，方便先看得到清單。這不會改 Telegram。
       </p>
 

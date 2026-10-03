@@ -113,7 +113,7 @@ export function LiveBoard() {
         </div>
         <div className="card">
           <b>{meta.bars_ready ?? "…"}</b>
-          <span>90 日基準就緒（可觸發）</span>
+          <span>30 日基準就緒（可觸發）</span>
         </div>
         <div className="card">
           <b>{meta.oi_ready ?? "…"}</b>

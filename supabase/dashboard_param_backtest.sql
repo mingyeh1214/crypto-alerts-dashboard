@@ -15,7 +15,7 @@ create or replace function public.dashboard_param_backtest(
   oi_1h_bars integer default 12,
   oi_z_lookback integer default 2016,
   oi_z_min_periods integer default 600,
-  baseline_bars integer default 8640,
+  baseline_bars integer default 2880,
   quiet_1h_bars integer default 4,
   quiet_4h_bars integer default 16,
   require_prior_24h boolean default true,
@@ -38,7 +38,7 @@ declare
   v_oi_1h integer := least(48, greatest(1, coalesce(oi_1h_bars, 12)));
   v_lookback integer := least(3000, greatest(20, coalesce(oi_z_lookback, 2016)));
   v_min_p integer := least(2000, greatest(10, coalesce(oi_z_min_periods, 600)));
-  v_base integer := least(8640, greatest(4, coalesce(baseline_bars, 8640)));
+  v_base integer := least(8640, greatest(4, coalesce(baseline_bars, 2880)));
   v_q1 integer := least(96, greatest(1, coalesce(quiet_1h_bars, 4)));
   v_q4 integer := least(96, greatest(1, coalesce(quiet_4h_bars, 16)));
   v_need24 boolean := coalesce(require_prior_24h, true);
@@ -104,7 +104,7 @@ begin
     v_reason := '資料庫還沒有現貨 1 分 K，沒辦法回測。';
   elsif v_max15 < greatest(v_base, v_q4) then
     v_reason := format(
-      '15 分已完成棒最多 %s 根，少於這次要的基準 %s 根／安靜 %s 根，所以清單是空的。按「配合目前資料」，或把「基準 15 分根數」調到 %s 以下。線上 90 日（8640）要等 1 分 K 再累積。',
+      '15 分已完成棒最多 %s 根，少於這次要的基準 %s 根／安靜 %s 根，所以清單是空的。按「配合目前資料」，或把「基準 15 分根數」調到 %s 以下。線上 30 日（2880）要等 1 分 K 再累積。',
       v_max15, v_base, v_q4, v_max15
     );
   elsif v_need24 and v_max15 < 97 then

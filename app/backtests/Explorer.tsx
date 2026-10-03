@@ -363,7 +363,7 @@ export function Explorer() {
           歷史長度
           <select value={hist} onChange={(e) => setHist(e.target.value as HistFilter)}>
             <option value="all">全部</option>
-            <option value="ok">可評估（約 90 日）</option>
+            <option value="ok">可評估（報告當時約 90 日）</option>
             <option value="short">歷史不足</option>
           </select>
         </label>
