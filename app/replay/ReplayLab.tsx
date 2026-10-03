@@ -5,7 +5,7 @@ import { pct, taipei } from "@/lib/format";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
 
 type Params = {
-  surge_mult: number;
+  volume_z: number;
   quiet_mult: number;
   min_bar_return: number;
   max_prior_24h: number;
@@ -24,6 +24,7 @@ type Signal = {
   symbol: string;
   bar_close: string;
   close: number | null;
+  volume_z: number | null;
   multiple: number | null;
   quiet_1h: number | null;
   quiet_4h: number | null;
@@ -57,7 +58,7 @@ type Result = {
 };
 
 const LIVE: Params = {
-  surge_mult: 10,
+  volume_z: 2.5,
   quiet_mult: 3,
   min_bar_return: 0.01,
   max_prior_24h: 0.08,
@@ -153,13 +154,13 @@ export function ReplayLab() {
         </div>
       </div>
       <p className="note">
-        線上是 30 日（2880 根 15 分）基準、前 24h 上限、OI z 仍是約 7 日（2016 根 5 分，至少約 600 根）。
-        基準已對齊資料庫大約 30 日的 1 分 K。剛補齊的視窗裡，要先累滿 2880 根才評得到最新那段。
+        線上放量是成交量 z（log）：這一分鐘成交額 ×15，對 30 日（2880 根）已完成 15 分 log 成交額的母體 z，預設 ≥ 2.5。
+        安靜仍是 ≤3 倍、前 24h 上限、OI z 約 7 日（2016 根 5 分，至少約 600 根）。標準差約 0 就不算放量。
         「配合目前資料」把基準降到 8 根、略過 24h、OI 樣本降到 30，方便先看得到清單。這不會改 Telegram。
       </p>
 
       <div className="filters">
-        <Num label="放量倍數" value={p.surge_mult} onChange={(v) => set("surge_mult", v)} />
+        <Num label="成交量 z（log）" value={p.volume_z} step="0.1" onChange={(v) => set("volume_z", v)} />
         <Num label="安靜上限（倍）" value={p.quiet_mult} onChange={(v) => set("quiet_mult", v)} />
         <Num label="轉強（小數，0.01=+1%）" value={p.min_bar_return} step="0.001" onChange={(v) => set("min_bar_return", v)} />
         <Num label="前 24h 上限" value={p.max_prior_24h} step="0.01" onChange={(v) => set("max_prior_24h", v)} />
@@ -225,7 +226,7 @@ export function ReplayLab() {
                   <th className="left">時間</th>
                   <th className="left">幣</th>
                   <th>收盤</th>
-                  <th>倍數</th>
+                  <th>成交量 z</th>
                   <th>安靜 1h</th>
                   <th>安靜 4h</th>
                   <th>轉強</th>
@@ -246,7 +247,7 @@ export function ReplayLab() {
                     <td className="left">{taipei(r.bar_close)}</td>
                     <td className="left">{r.symbol}</td>
                     <td>{r.close ?? "—"}</td>
-                    <td>{r.multiple == null ? "—" : r.multiple.toFixed(1)}</td>
+                    <td>{r.volume_z == null ? "—" : r.volume_z.toFixed(2)}</td>
                     <td>{r.quiet_1h == null ? "—" : r.quiet_1h.toFixed(2)}</td>
                     <td>{r.quiet_4h == null ? "—" : r.quiet_4h.toFixed(2)}</td>
                     <td className={cls(r.ret_bar)}>{pct(r.ret_bar)}</td>

@@ -1,13 +1,15 @@
 -- Parameter replay of the 1m quiet-surge rule on stored spot 1m klines + 5m OI.
 -- Anon cannot read base tables. Security definer, read only.
 -- Must finish inside the anon role statement_timeout (3s): coverage first,
--- then one as-of pass over completed 15m bars. OI z is computed only for
+-- then one as-of pass over completed 15m bars. Volume gate is the population
+-- z of log(1m quote * 15) vs log(quote) of the prior baseline 15m bars.
+-- OI z is computed only for
 -- symbols that already passed the price gates.
 -- OI has no 1m history: z / 1h use the completed 5m bar and apply on the
 -- last minute of that 5m bar (no lookahead into the bar).
 
 create or replace function public.dashboard_param_backtest(
-  surge_mult double precision default 10,
+  volume_z double precision default 2.5,
   quiet_mult double precision default 3,
   min_bar_return double precision default 0.01,
   max_prior_24h double precision default 0.08,
@@ -30,7 +32,7 @@ set enable_mergejoin = off
 as $$
 #variable_conflict use_column
 declare
-  v_surge double precision := least(100, greatest(1, coalesce(surge_mult, 10)));
+  v_vz double precision := least(12, greatest(0, coalesce(volume_z, 2.5)));
   v_quiet double precision := least(50, greatest(0.1, coalesce(quiet_mult, 3)));
   v_min_ret double precision := least(1, greatest(-0.5, coalesce(min_bar_return, 0.01)));
   v_max_24h double precision := least(5, greatest(-0.5, coalesce(max_prior_24h, 0.08)));
@@ -134,7 +136,9 @@ begin
     comp as materialized (
       select symbol, bucket, close, quote,
              row_number() over (partition by symbol order by bucket)::int as rn,
-             sum(quote) over (partition by symbol order by bucket) as q_cum
+             sum(quote) over (partition by symbol order by bucket) as q_cum,
+             sum(ln(quote)) over (partition by symbol order by bucket) as ln_cum,
+             sum(ln(quote) * ln(quote)) over (partition by symbol order by bucket) as ln2_cum
       from raw15
       where minutes >= 15 and quote > 0 and close > 0
     ),
@@ -181,6 +185,7 @@ begin
         t.symbol,
         t.open_time + interval '1 minute' as bar_close,
         t.close,
+        b.vol_z as volume_z,
         t.quote / (b.base_mean / 15.0) as multiple,
         med.med1 / b.base_mean as quiet_1h,
         med.med4 / b.base_mean as quiet_4h,
@@ -194,10 +199,26 @@ begin
       left join comp c24 on c24.symbol = c.symbol and c24.rn = c.rn - 96
       left join fut_map fm on fm.symbol = t.symbol
       cross join lateral (
-        select case
-          when prev.q_cum is null then c.q_cum / v_base
-          else (c.q_cum - prev.q_cum) / v_base
-        end as base_mean
+        select
+          s.base_mean,
+          case
+            when s.var > 1e-18 and t.quote > 0
+            then (ln(t.quote * 15.0) - s.mu) / sqrt(s.var)
+          end as vol_z
+        from (
+          select
+            case
+              when prev.q_cum is null then c.q_cum / v_base
+              else (c.q_cum - prev.q_cum) / v_base
+            end as base_mean,
+            (case when prev.ln_cum is null then c.ln_cum else c.ln_cum - prev.ln_cum end) / v_base as mu,
+            (
+              (case when prev.ln2_cum is null then c.ln2_cum else c.ln2_cum - prev.ln2_cum end) / v_base
+              - (
+                  (case when prev.ln_cum is null then c.ln_cum else c.ln_cum - prev.ln_cum end) / v_base
+                ) ^ 2
+            ) as var
+        ) s
       ) b
       cross join lateral (
         select
@@ -211,7 +232,8 @@ begin
       where t.open_time is not null
         and t.last_rn >= greatest(v_base, v_q4)
         and b.base_mean > 0
-        and t.quote / (b.base_mean / 15.0) >= v_surge
+        and b.vol_z is not null
+        and b.vol_z >= v_vz
         and med.med1 / b.base_mean <= v_quiet
         and med.med4 / b.base_mean <= v_quiet
         and (t.close / c.close - 1) >= v_min_ret
@@ -280,7 +302,7 @@ begin
       coalesce((
         select jsonb_agg(row_to_json(t)::jsonb order by t.bar_close desc)
         from (
-          select symbol, bar_close, close, multiple, quiet_1h, quiet_4h,
+          select symbol, bar_close, close, volume_z, multiple, quiet_1h, quiet_4h,
                  ret_bar, prior_24h, oi_1h, oi_z, oi_5m
           from scored
           order by bar_close desc
@@ -292,8 +314,8 @@ begin
     if coalesce(jsonb_array_length(v_signals), 0) = 0 then
       if v_price = 0 then
         v_reason := format(
-          '量價沒過：沒有任何一分鐘同時達到放量 %s×、安靜 ≤%s×、轉強 ≥%s。只檢查每根 5 分的最後 1 分鐘（對齊已走完的 5 分 OI）。有足夠標準的幣約 %s 檔。可再降放量倍數，或用「配合目前資料」。',
-          v_surge, v_quiet, to_char(v_min_ret, 'FM0.000'), v_ready
+          '量價沒過：沒有任何一分鐘同時達到成交量 log z ≥ %s、安靜 ≤%s×、轉強 ≥%s。只檢查每根 5 分的最後 1 分鐘（對齊已走完的 5 分 OI）。有足夠標準的幣約 %s 檔。可再降成交量 z，或用「配合目前資料」。',
+          v_vz, v_quiet, to_char(v_min_ret, 'FM0.000'), v_ready
         );
       else
         v_reason := format(
@@ -307,7 +329,7 @@ begin
   return jsonb_build_object(
     'generated_at', now(),
     'params', jsonb_build_object(
-      'surge_mult', v_surge,
+      'volume_z', v_vz,
       'quiet_mult', v_quiet,
       'min_bar_return', v_min_ret,
       'max_prior_24h', v_max_24h,

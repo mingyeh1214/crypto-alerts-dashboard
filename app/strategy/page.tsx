@@ -20,8 +20,8 @@ export default function StrategyPage() {
           <tbody>
             <tr><td className="left">節奏</td><td className="left">每根 1 分收盤評估，當下就發 Telegram。5 分、15 分是進場之後的驗證，不是進場條件。</td></tr>
             <tr><td className="left">成交額</td><td className="left">這一分鐘的 close×volume。30 日基準仍用已完成 15 分的 quoteAssetVolume（即時不足時用 1 分累加）。</td></tr>
-            <tr><td className="left">基準</td><td className="left">先前正好 2880 根已完成 15 分（約 30 日）的平均成交額。平常 1 分 = 這個平均 ÷ 15。不滿 30 日不觸發。</td></tr>
-            <tr><td className="left">放量</td><td className="left">這一分鐘 ≥ 平常 1 分的 10 倍（大約是一整根 30 日 15 分均量的 67%）。門檻故意高，避免每根 1 分都在叫。</td></tr>
+            <tr><td className="left">基準</td><td className="left">先前正好 2880 根已完成 15 分（約 30 日）。放量用這段的 log 成交額平均與標準差；安靜仍用算術平均（中位 ÷ 平均）。不滿 30 日不觸發。</td></tr>
+            <tr><td className="left">放量</td><td className="left">成交量 z（log）。把這一分鐘成交額 ×15，對先前 2880 根已完成 15 分 log 成交額做母體 z（略過 ≤0）。預設 ≥ 2.5，參數名 volume_z，可在規則與回測裡改。標準差約 0 或不滿兩根正成交額就不觸發。不再用固定 10 倍。</td></tr>
             <tr><td className="left">安靜</td><td className="left">已完成的 15 分：前 4 根（1 小時）與前 16 根（4 小時）成交額中位，都 ≤ 15 分基準的 3 倍。正在走的那根不算進去。</td></tr>
             <tr><td className="left">轉強</td><td className="left">1 分收盤相對前一根已完成 15 分收盤 ≥ +1%，而且這一分鐘本身不是收跌。</td></tr>
             <tr><td className="left">還沒跑遠</td><td className="left">前 24 小時漲幅（上一根 15 分收盤 vs 再往前 96 根）≤ +8%。</td></tr>
