@@ -19,9 +19,9 @@ export default function StrategyPage() {
           </thead>
           <tbody>
             <tr><td className="left">節奏</td><td className="left">每根 1 分收盤評估，當下就發 Telegram。5 分、15 分是進場之後的驗證，不是進場條件。</td></tr>
-            <tr><td className="left">成交額</td><td className="left">這一分鐘的 close×volume。30 日基準仍用已完成 15 分的 quoteAssetVolume（即時不足時用 1 分累加）。</td></tr>
-            <tr><td className="left">基準</td><td className="left">先前正好 2880 根已完成 15 分（約 30 日）。放量用這段的 log 成交額平均與標準差；安靜仍用算術平均（中位 ÷ 平均）。不滿 30 日不觸發。</td></tr>
-            <tr><td className="left">放量</td><td className="left">成交量 z（log）。把這一分鐘成交額 ×15，對先前 2880 根已完成 15 分 log 成交額做母體 z（略過 ≤0）。預設 ≥ 2.5，參數名 volume_z，可在規則與回測裡改。標準差約 0 或不滿兩根正成交額就不觸發。不再用固定 10 倍。</td></tr>
+            <tr><td className="left">成交額</td><td className="left">這一分鐘的 quote volume（沒有則 close×volume）。放量基準用同樣的已完成 1 分成交額，不再換成 15 分。</td></tr>
+            <tr><td className="left">基準</td><td className="left">放量：先前正好 volume_z_bars_1m 根已完成 1 分，預設 43200（30×24×60）。安靜：先前正好 2880 根已完成 15 分的算術平均（中位 ÷ 平均）。任一段不夠長就不觸發。</td></tr>
+            <tr><td className="left">放量</td><td className="left">成交量 z（log）。z =（log 這一分鐘成交額 − μ）／σ，μ／σ 來自先前 N 根已完成 1 分 log 成交額（略過 ≤0，母體標準差）。預設 N＝43200、門檻 volume_z＝2.5，兩個都能在規則與回測裡改。標準差約 0、不滿兩根正成交額、或 1 分歷史短於 N 就不觸發。不再用固定 10 倍，也不再乘 15。</td></tr>
             <tr><td className="left">安靜</td><td className="left">已完成的 15 分：前 4 根（1 小時）與前 16 根（4 小時）成交額中位，都 ≤ 15 分基準的 3 倍。正在走的那根不算進去。</td></tr>
             <tr><td className="left">轉強</td><td className="left">1 分收盤相對前一根已完成 15 分收盤 ≥ +1%，而且這一分鐘本身不是收跌。</td></tr>
             <tr><td className="left">還沒跑遠</td><td className="left">前 24 小時漲幅（上一根 15 分收盤 vs 再往前 96 根）≤ +8%。</td></tr>
@@ -37,7 +37,7 @@ export default function StrategyPage() {
       <ul className="clean">
         <li>幣安現貨 USDT，狀態交易中，且有同名（或對應）U 本位永續，才能即時拉 OI。</li>
         <li>槓桿代幣、穩定幣排除。純現貨沒有永續的不進這套線上規則。</li>
-        <li>目前啟用約 360 檔。基準是約 30 日（2880 根 15 分）。幣安 15 分歷史不夠的新上架幣規則在，但不會響。</li>
+        <li>目前啟用約 360 檔。放量回看預設 30 日（43200 根 1 分），安靜基準仍是 2880 根 15 分。歷史不夠的新上架幣規則在，但不會響。</li>
         <li>每根 1 分 K 與指標會寫進資料庫。警報與追蹤另外寫入。評估本身仍在記憶體，不必先讀庫。</li>
       </ul>
 

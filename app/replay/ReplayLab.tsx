@@ -14,6 +14,7 @@ type Params = {
   oi_z_lookback: number;
   oi_z_min_periods: number;
   baseline_bars: number;
+  volume_z_bars_1m: number;
   quiet_1h_bars: number;
   quiet_4h_bars: number;
   require_prior_24h: boolean;
@@ -67,6 +68,7 @@ const LIVE: Params = {
   oi_z_lookback: 2016,
   oi_z_min_periods: 600,
   baseline_bars: 2880,
+  volume_z_bars_1m: 43200,
   quiet_1h_bars: 4,
   quiet_4h_bars: 16,
   require_prior_24h: true,
@@ -76,6 +78,7 @@ const LIVE: Params = {
 const FIT: Params = {
   ...LIVE,
   baseline_bars: 8,
+  volume_z_bars_1m: 240,
   quiet_4h_bars: 8,
   oi_z_lookback: 72,
   oi_z_min_periods: 30,
@@ -154,9 +157,9 @@ export function ReplayLab() {
         </div>
       </div>
       <p className="note">
-        線上放量是成交量 z（log）：這一分鐘成交額 ×15，對 30 日（2880 根）已完成 15 分 log 成交額的母體 z，預設 ≥ 2.5。
-        安靜仍是 ≤3 倍、前 24h 上限、OI z 約 7 日（2016 根 5 分，至少約 600 根）。標準差約 0 就不算放量。
-        「配合目前資料」把基準降到 8 根、略過 24h、OI 樣本降到 30，方便先看得到清單。這不會改 Telegram。
+        線上放量是成交量 z（log）：這一分鐘成交額直接對過去已完成 1 分 log 成交額的母體 z，預設回看 30 日（43200 根）、門檻 ≥ 2.5。不再乘 15，也不跟 15 分比。
+        安靜仍用 15 分中位（≤3 倍、基準 2880 根）、前 24h 上限、OI z 約 7 日（2016 根 5 分，至少約 600 根）。標準差約 0 或樣本不足就不算放量。
+        「配合目前資料」把放量回看降到 240 根、安靜基準降到 8 根、略過 24h、OI 樣本降到 30。這不會改 Telegram。
       </p>
 
       <div className="filters">
@@ -164,7 +167,8 @@ export function ReplayLab() {
         <Num label="安靜上限（倍）" value={p.quiet_mult} onChange={(v) => set("quiet_mult", v)} />
         <Num label="轉強（小數，0.01=+1%）" value={p.min_bar_return} step="0.001" onChange={(v) => set("min_bar_return", v)} />
         <Num label="前 24h 上限" value={p.max_prior_24h} step="0.01" onChange={(v) => set("max_prior_24h", v)} />
-        <Num label="基準 15 分根數" value={p.baseline_bars} step="1" onChange={(v) => set("baseline_bars", v)} />
+        <Num label="放量回看 1 分根數" value={p.volume_z_bars_1m} step="1" onChange={(v) => set("volume_z_bars_1m", v)} />
+        <Num label="安靜基準 15 分根數" value={p.baseline_bars} step="1" onChange={(v) => set("baseline_bars", v)} />
         <Num label="安靜 1h 根數" value={p.quiet_1h_bars} step="1" onChange={(v) => set("quiet_1h_bars", v)} />
         <Num label="安靜 4h 根數" value={p.quiet_4h_bars} step="1" onChange={(v) => set("quiet_4h_bars", v)} />
         <Num label="OI z 門檻" value={p.oi_z_min} step="0.1" onChange={(v) => set("oi_z_min", v)} />
@@ -295,7 +299,7 @@ function explainApi(text: string, status: number): string {
     const body = JSON.parse(text) as { code?: string; message?: string };
     const msg = body.message || "";
     if (body.code === "57014" || /statement timeout/i.test(msg)) {
-      return "回測超過資料庫 3 秒上限，清單沒算出來。先按「配合目前資料」，或只填一個幣別再跑。";
+      return "回測逾時，清單沒算出來。先填一個幣別，或按「配合目前資料」。";
     }
     if (msg) return `回測失敗：${msg}`;
   } catch {

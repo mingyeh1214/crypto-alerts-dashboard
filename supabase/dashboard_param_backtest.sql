@@ -1,12 +1,17 @@
 -- Parameter replay of the 1m quiet-surge rule on stored spot 1m klines + 5m OI.
 -- Anon cannot read base tables. Security definer, read only.
--- Must finish inside the anon role statement_timeout (3s): coverage first,
--- then one as-of pass over completed 15m bars. Volume gate is the population
--- z of log(1m quote * 15) vs log(quote) of the prior baseline 15m bars.
--- OI z is computed only for
--- symbols that already passed the price gates.
+-- Volume gate is the population z of log(1m quote) vs the prior
+-- volume_z_bars_1m completed 1m bars (default 43200 = 30d). No ×15 scale.
+-- Quiet filters still use completed 15m medians vs the 15m arithmetic mean.
 -- OI has no 1m history: z / 1h use the completed 5m bar and apply on the
 -- last minute of that 5m bar (no lookahead into the bar).
+-- statement_timeout is raised for this function only (anon role is 3s).
+
+drop function if exists public.dashboard_param_backtest(
+  double precision, double precision, double precision, double precision,
+  double precision, integer, integer, integer, integer, integer, integer,
+  boolean, text
+);
 
 create or replace function public.dashboard_param_backtest(
   volume_z double precision default 2.5,
@@ -18,6 +23,7 @@ create or replace function public.dashboard_param_backtest(
   oi_z_lookback integer default 2016,
   oi_z_min_periods integer default 600,
   baseline_bars integer default 2880,
+  volume_z_bars_1m integer default 43200,
   quiet_1h_bars integer default 4,
   quiet_4h_bars integer default 16,
   require_prior_24h boolean default true,
@@ -29,6 +35,7 @@ volatile
 security definer
 set search_path = public
 set enable_mergejoin = off
+set statement_timeout = '90s'
 as $$
 #variable_conflict use_column
 declare
@@ -41,6 +48,7 @@ declare
   v_lookback integer := least(3000, greatest(20, coalesce(oi_z_lookback, 2016)));
   v_min_p integer := least(2000, greatest(10, coalesce(oi_z_min_periods, 600)));
   v_base integer := least(8640, greatest(4, coalesce(baseline_bars, 2880)));
+  v_vz_bars integer := least(100000, greatest(2, coalesce(volume_z_bars_1m, 43200)));
   v_q1 integer := least(96, greatest(1, coalesce(quiet_1h_bars, 4)));
   v_q4 integer := least(96, greatest(1, coalesce(quiet_4h_bars, 16)));
   v_need24 boolean := coalesce(require_prior_24h, true);
@@ -54,6 +62,7 @@ declare
   v_oi_rows bigint;
   v_oi_syms bigint;
   v_max15 integer;
+  v_max1m integer;
   v_maxoi integer;
   v_ready bigint;
   v_reason text;
@@ -95,6 +104,15 @@ begin
     group by b.symbol
   ) s;
 
+  select coalesce(max(n), 0) into v_max1m
+  from (
+    select count(*)::int as n
+    from klines_1m k
+    where k.market_type = 'spot' and k.is_closed
+      and (v_symbol is null or k.symbol = v_symbol)
+    group by k.symbol
+  ) s;
+
   select coalesce(max(n), 0) into v_maxoi
   from (
     select count(*)::int as n from oi_5m o
@@ -104,9 +122,14 @@ begin
 
   if coalesce(v_k_rows, 0) = 0 then
     v_reason := '資料庫還沒有現貨 1 分 K，沒辦法回測。';
+  elsif v_max1m < v_vz_bars then
+    v_reason := format(
+      '1 分 K 最多 %s 根，少於放量回看 %s 根（30 日＝43200）。把「放量回看 1 分根數」調低，或按「配合目前資料」。',
+      v_max1m, v_vz_bars
+    );
   elsif v_max15 < greatest(v_base, v_q4) then
     v_reason := format(
-      '15 分已完成棒最多 %s 根，少於這次要的基準 %s 根／安靜 %s 根，所以清單是空的。按「配合目前資料」，或把「基準 15 分根數」調到 %s 以下。線上 30 日（2880）要等 1 分 K 再累積。',
+      '15 分已完成棒最多 %s 根，少於安靜基準 %s 根／安靜 %s 根，所以清單是空的。安靜仍用 15 分，放量 z 已改看 1 分。按「配合目前資料」，或把「安靜基準 15 分根數」調到 %s 以下。',
       v_max15, v_base, v_q4, v_max15
     );
   elsif v_need24 and v_max15 < 97 then
@@ -136,9 +159,7 @@ begin
     comp as materialized (
       select symbol, bucket, close, quote,
              row_number() over (partition by symbol order by bucket)::int as rn,
-             sum(quote) over (partition by symbol order by bucket) as q_cum,
-             sum(ln(quote)) over (partition by symbol order by bucket) as ln_cum,
-             sum(ln(quote) * ln(quote)) over (partition by symbol order by bucket) as ln2_cum
+             sum(quote) over (partition by symbol order by bucket) as q_cum
       from raw15
       where minutes >= 15 and quote > 0 and close > 0
     ),
@@ -146,23 +167,44 @@ begin
       select k.symbol,
              k.open_time,
              k.close::float8 as close,
-             (k.close * k.volume)::float8 as quote,
-             to_timestamp(floor(extract(epoch from k.open_time) / 900) * 900) as b15,
+             coalesce(k.quote_volume, k.close * k.volume)::float8 as quote,
+             row_number() over (partition by k.symbol order by k.open_time)::int as rn,
+             sum(case when coalesce(k.quote_volume, k.close * k.volume) > 0
+                      then ln(coalesce(k.quote_volume, k.close * k.volume)::float8) else 0 end)
+               over w as ln_cum,
+             sum(case when coalesce(k.quote_volume, k.close * k.volume) > 0
+                      then ln(coalesce(k.quote_volume, k.close * k.volume)::float8)
+                         * ln(coalesce(k.quote_volume, k.close * k.volume)::float8) else 0 end)
+               over w as ln2_cum,
+             sum(case when coalesce(k.quote_volume, k.close * k.volume) > 0 then 1 else 0 end)
+               over w as npos,
+             sum(case when coalesce(k.quote_volume, k.close * k.volume) > 0
+                      then coalesce(k.quote_volume, k.close * k.volume)::float8 else 0 end)
+               over w as qpos,
              lag(k.close::float8) over (partition by k.symbol order by k.open_time) as prev_1m,
              lag(k.open_time) over (partition by k.symbol order by k.open_time) as prev_1m_t
       from klines_1m k
       where k.market_type = 'spot' and k.is_closed and k.close > 0 and k.volume >= 0
         and (v_symbol is null or k.symbol = v_symbol)
-        and mod(extract(epoch from k.open_time)::bigint, 300) = 240
+      window w as (partition by k.symbol order by k.open_time)
+    ),
+    cands as materialized (
+      select *
+      from m1
+      where rn >= v_vz_bars + 1
+        and mod(extract(epoch from open_time)::bigint, 300) = 240
     ),
     events as (
       select symbol, bucket as ts, 1 as ord, rn,
              null::timestamptz as open_time, null::float8 as close, null::float8 as quote,
-             null::float8 as prev_1m, null::timestamptz as prev_1m_t
+             null::float8 as prev_1m, null::timestamptz as prev_1m_t,
+             null::int as m_rn
       from comp
       union all
-      select symbol, b15, 0, null::int, open_time, close, quote, prev_1m, prev_1m_t
-      from m1
+      select symbol,
+             to_timestamp(floor(extract(epoch from open_time) / 900) * 900),
+             0, null::int, open_time, close, quote, prev_1m, prev_1m_t, rn
+      from cands
     ),
     tag as materialized (
       select *,
@@ -185,8 +227,8 @@ begin
         t.symbol,
         t.open_time + interval '1 minute' as bar_close,
         t.close,
-        b.vol_z as volume_z,
-        t.quote / (b.base_mean / 15.0) as multiple,
+        z.vol_z as volume_z,
+        t.quote / z.mean_1m as multiple,
         med.med1 / b.base_mean as quiet_1h,
         med.med4 / b.base_mean as quiet_4h,
         (t.close / c.close - 1) as ret_bar,
@@ -198,28 +240,41 @@ begin
       left join comp prev on prev.symbol = c.symbol and prev.rn = c.rn - v_base
       left join comp c24 on c24.symbol = c.symbol and c24.rn = c.rn - 96
       left join fut_map fm on fm.symbol = t.symbol
+      join m1 p on p.symbol = t.symbol and p.rn = t.m_rn - 1
+      left join m1 o on o.symbol = t.symbol and o.rn = t.m_rn - 1 - v_vz_bars
       cross join lateral (
         select
-          s.base_mean,
           case
-            when s.var > 1e-18 and t.quote > 0
-            then (ln(t.quote * 15.0) - s.mu) / sqrt(s.var)
+            when prev.q_cum is null then c.q_cum / v_base
+            else (c.q_cum - prev.q_cum) / v_base
+          end as base_mean
+      ) b
+      cross join lateral (
+        select
+          s.npos,
+          s.mu,
+          s.var,
+          case when s.npos > 0 then s.qsum / s.npos end as mean_1m,
+          case
+            when s.npos >= 2 and s.var > 1e-18 and t.quote > 0
+            then (ln(t.quote) - s.mu) / sqrt(s.var)
           end as vol_z
         from (
           select
-            case
-              when prev.q_cum is null then c.q_cum / v_base
-              else (c.q_cum - prev.q_cum) / v_base
-            end as base_mean,
-            (case when prev.ln_cum is null then c.ln_cum else c.ln_cum - prev.ln_cum end) / v_base as mu,
+            (p.npos - coalesce(o.npos, 0))::float8 as npos,
+            (p.ln_cum - coalesce(o.ln_cum, 0))
+              / nullif((p.npos - coalesce(o.npos, 0))::float8, 0) as mu,
             (
-              (case when prev.ln2_cum is null then c.ln2_cum else c.ln2_cum - prev.ln2_cum end) / v_base
+              (p.ln2_cum - coalesce(o.ln2_cum, 0))
+                / nullif((p.npos - coalesce(o.npos, 0))::float8, 0)
               - (
-                  (case when prev.ln_cum is null then c.ln_cum else c.ln_cum - prev.ln_cum end) / v_base
+                  (p.ln_cum - coalesce(o.ln_cum, 0))
+                    / nullif((p.npos - coalesce(o.npos, 0))::float8, 0)
                 ) ^ 2
-            ) as var
+            ) as var,
+            (p.qpos - coalesce(o.qpos, 0))::float8 as qsum
         ) s
-      ) b
+      ) z
       cross join lateral (
         select
           (select percentile_cont(0.5) within group (order by q.quote)
@@ -232,8 +287,9 @@ begin
       where t.open_time is not null
         and t.last_rn >= greatest(v_base, v_q4)
         and b.base_mean > 0
-        and b.vol_z is not null
-        and b.vol_z >= v_vz
+        and z.mean_1m > 0
+        and z.vol_z is not null
+        and z.vol_z >= v_vz
         and med.med1 / b.base_mean <= v_quiet
         and med.med4 / b.base_mean <= v_quiet
         and (t.close / c.close - 1) >= v_min_ret
@@ -314,8 +370,8 @@ begin
     if coalesce(jsonb_array_length(v_signals), 0) = 0 then
       if v_price = 0 then
         v_reason := format(
-          '量價沒過：沒有任何一分鐘同時達到成交量 log z ≥ %s、安靜 ≤%s×、轉強 ≥%s。只檢查每根 5 分的最後 1 分鐘（對齊已走完的 5 分 OI）。有足夠標準的幣約 %s 檔。可再降成交量 z，或用「配合目前資料」。',
-          v_vz, v_quiet, to_char(v_min_ret, 'FM0.000'), v_ready
+          '量價沒過：沒有任何一分鐘同時達到 1 分 log 成交額 z ≥ %s（回看 %s 根）、安靜 ≤%s×、轉強 ≥%s。只檢查每根 5 分的最後 1 分鐘（對齊已走完的 5 分 OI）。有足夠 15 分的幣約 %s 檔。可再降成交量 z，或用「配合目前資料」。',
+          v_vz, v_vz_bars, v_quiet, to_char(v_min_ret, 'FM0.000'), v_ready
         );
       else
         v_reason := format(
@@ -338,6 +394,7 @@ begin
       'oi_z_lookback', v_lookback,
       'oi_z_min_periods', v_min_p,
       'baseline_bars', v_base,
+      'volume_z_bars_1m', v_vz_bars,
       'quiet_1h_bars', v_q1,
       'quiet_4h_bars', v_q4,
       'require_prior_24h', v_need24,
@@ -353,6 +410,7 @@ begin
       'oi_rows', v_oi_rows,
       'oi_symbols', v_oi_syms,
       'max_completed_15m', v_max15,
+      'max_1m_bars', v_max1m,
       'max_oi_points', v_maxoi
     ),
     'price_hits', v_price,
@@ -365,12 +423,12 @@ $$;
 
 revoke all on function public.dashboard_param_backtest(
   double precision, double precision, double precision, double precision,
-  double precision, integer, integer, integer, integer, integer, integer,
+  double precision, integer, integer, integer, integer, integer, integer, integer,
   boolean, text
 ) from public;
 
 grant execute on function public.dashboard_param_backtest(
   double precision, double precision, double precision, double precision,
-  double precision, integer, integer, integer, integer, integer, integer,
+  double precision, integer, integer, integer, integer, integer, integer, integer,
   boolean, text
 ) to anon, authenticated;

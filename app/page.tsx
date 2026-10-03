@@ -11,7 +11,7 @@ export default function HomePage() {
       </p>
       <div className="cards">
         <div className="card"><b>360</b><span>啟用中的 quiet_surge_early</span><em>現貨＋永續</em></div>
-        <div className="card"><b>30 日</b><span>成交額基準（2880 根 15 分）</span><em>對齊約 30 日資料</em></div>
+        <div className="card"><b>30 日</b><span>放量回看（43200 根 1 分）</span><em>log 成交額 z，可調</em></div>
         <div className="card"><b>360</b><span>OI 已就緒</span><em>合約張數</em></div>
         <div className="card"><b>60 分</b><span>同幣進場冷卻</span><em>追蹤中不再發新進場</em></div>
       </div>
@@ -22,7 +22,7 @@ export default function HomePage() {
           <h2>現在在盯什麼</h2>
           <ul className="clean">
             <li>宇宙：幣安現貨 USDT，且有對應 U 本位永續。槓桿代幣與穩定幣排除。約 360 檔，各一條規則。</li>
-            <li>進場在 <strong>1 分 K 收盤</strong>。這一分鐘成交額換成 15 分等價（×15）後，對 30 日已完成 15 分 log 成交額的 z ≥ 2.5（可調），而且相對前一根 15 分收盤已漲 ≥ 1%。</li>
+            <li>進場在 <strong>1 分 K 收盤</strong>。這一分鐘成交額的 log，對過去 30 日已完成 1 分 log 成交額的 z ≥ 2.5（回看根數可調，預設 43200），而且相對前一根 15 分收盤已漲 ≥ 1%。</li>
             <li>安靜仍看已完成的 15 分：前 1 小時、前 4 小時中位都不能已經很熱。OI 確認後才發 Telegram。</li>
             <li>參考驗證幣仍包含 SAGA、GTC、SAND、QNT（以及回測裡的 MANA），但線上不再只盯這四檔。</li>
           </ul>
