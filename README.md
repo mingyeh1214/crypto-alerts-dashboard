@@ -4,7 +4,7 @@
 
 - 即時 worker 在另一個 repo（`crypto-alerts-worker`），這個站不改它。
 - 即時頁用 Supabase **anon** key 呼叫 `dashboard_live()`。資料表 RLS 仍關閉匿名讀取。
-- 回測 HTML 在 `public/reports/`，摘要 JSON 在 `public/data/backtests.json`。
+- 回測 HTML 在 `public/reports/`。摘要在 `public/data/backtests.json`；全市場 491 檔與 902 筆在 `public/data/full_market.json`（回測頁可篩選）。
 
 ```bash
 npm install

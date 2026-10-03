@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import backtests from "@/public/data/backtests.json";
 import { pct, usd } from "@/lib/format";
+import { Explorer } from "./Explorer";
 
 export const metadata: Metadata = { title: "回測 · 盯盤哨兵" };
 
@@ -73,13 +74,15 @@ export default function BacktestsPage() {
           </tbody>
         </table>
       </div>
-      <div className="row-links">
-        <a href="/reports/full_market_early_oi_report.html">打開完整 HTML（含單筆）</a>
-      </div>
-      <div className="iframe-wrap">
-        <iframe title="全市場回測" src="/reports/full_market_early_oi_report.html" />
-      </div>
+      <h2>各幣完整資料</h2>
+      <p className="lead">
+        模擬宇宙 491 檔全部列出（含 0 筆與歷史不足）。可依幣別、日期、合約 OI、+1 日報酬區間、訊號筆數與歷史長度篩選；
+        點幣別可看該檔每一筆。
+      </p>
+      <Explorer />
 
+      <details className="fold">
+        <summary>參考幣時間軸、條件掃描與原始 HTML</summary>
       <h2>參考幣時間軸（SAGA／GTC／SAND／QNT／MANA）</h2>
       <div className="cards">
         <div className="card"><b>{early.summary.total}</b><span>9 月起筆數</span></div>
@@ -144,9 +147,13 @@ export default function BacktestsPage() {
         </table>
       </div>
       <div className="row-links">
-        <a href="/reports/quiet_surge_filter_scan.html">打開條件掃描 HTML（較大）</a>
+        <a href="/reports/full_market_early_oi_report.html">全市場 HTML 摘要</a>
+        <a href="/reports/quiet_surge_early_oi_timeline.html">參考幣時間軸 HTML</a>
+        <a href="/reports/quiet_surge_filter_scan.html">條件掃描 HTML（較大）</a>
+        <a href="/data/full_market.json">全市場 JSON</a>
       </div>
       <p className="note">不是投資建議。全市場中位偏弱，路徑最大漲的中位約 +19%，不能當成可實現的出場。</p>
+      </details>
     </main>
   );
 }

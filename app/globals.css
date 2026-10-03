@@ -89,3 +89,70 @@ iframe { width: 100%; height: 720px; border: 0; background: #0e1116; }
 .row-links { display: flex; gap: 12px; flex-wrap: wrap; margin: 8px 0 14px; }
 
 .err { color: var(--down); }
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 0.75rem; color: var(--muted); }
+.field input, .field select {
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.92rem;
+  width: 100%;
+}
+.field.inline { flex-direction: row; align-items: center; gap: 6px; width: auto; }
+.field.inline select { width: auto; padding: 6px 8px; }
+.toolbar {
+  display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  align-items: center; margin: 4px 0 12px;
+}
+.toolbar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.seg { display: flex; gap: 6px; }
+.seg button, .btn {
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+.seg button.on { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.linkish {
+  background: none; border: 0; padding: 0; color: var(--amber);
+  font: inherit; cursor: pointer; text-align: left;
+}
+.linkish:hover { text-decoration: underline; }
+.sym { color: var(--muted); font-size: 0.75rem; }
+tr.pinned td { background: rgba(228, 177, 90, 0.08); }
+.card b.up { color: var(--up); }
+.card b.dn { color: var(--down); }
+.card b small { font-size: 0.75rem; font-weight: 500; color: var(--muted); }
+.pager {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  margin: 10px 0; color: var(--muted); font-size: 0.88rem;
+}
+.fold {
+  margin-top: 28px;
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+.fold > summary {
+  cursor: pointer;
+  color: var(--amber);
+  margin: 8px 0 12px;
+}
+.explorer .scroll table { min-width: 860px; }
+@media (max-width: 720px) {
+  .shell { padding-left: 12px; padding-right: 12px; }
+  h1 { font-size: 1.4rem; }
+}
