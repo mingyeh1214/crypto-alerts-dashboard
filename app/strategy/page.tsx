@@ -26,7 +26,7 @@ export default function StrategyPage() {
             <tr><td className="left">轉強</td><td className="left">1 分收盤相對前一根已完成 15 分收盤 ≥ +1%，而且這一分鐘本身不是收跌。</td></tr>
             <tr><td className="left">還沒跑遠</td><td className="left">前 24 小時漲幅（上一根 15 分收盤 vs 再往前 96 根）≤ +8%。</td></tr>
             <tr><td className="left">OI 方向</td><td className="left">USDT-M 持倉張數（sumOpenInterest，不是 USDT 名目）。即時張數相對約 1 小時前 &gt; 0。</td></tr>
-            <tr><td className="left">OI 異常</td><td className="left">從這根 15 分開始到現在的 OI 變化百分比，相對前 7 日 15 分 OI 變化（不含這一檔）的 z ≥ 1。至少 200 個有效樣本。</td></tr>
+            <tr><td className="left">OI 異常</td><td className="left">幣安 5 分 OI（官方最小框）。這一根 5 分的張數變化（即時 / 本根 5 分開盤 − 1），相對前 7 日相鄰 5 分 OI 變化（不含這一檔）的 z ≥ 1。至少約 600 根有效樣本（大約 2 日）。1 小時方向是 12 根 5 分。</td></tr>
             <tr><td className="left">OI 時效</td><td className="left">即時快照不能舊於 30 分鐘。量價沒過的分鐘不會去抓 OI。</td></tr>
             <tr><td className="left">冷卻</td><td className="left">同一幣 60 分鐘內不重複發進場。追蹤進行中也不發新的進場。</td></tr>
           </tbody>
@@ -65,7 +65,7 @@ export default function StrategyPage() {
       <h2>OI 從哪來</h2>
       <ul className="clean">
         <li>即時：<code>openInterest</code>（www.binance.com，fapi.binance.com 備援）。部分雲端 IP 對 fapi 會回 HTTP 451。</li>
-        <li>歷史 15 分：<code>openInterestHist</code>，可帶 endTime 翻頁。data.binance.vision 沒有這兩個合約 OI 端點，所以即時監控不靠日檔。</li>
+        <li>歷史 5 分：<code>openInterestHist?period=5m</code>，可帶 endTime 翻頁，並寫進資料庫 <code>oi_5m</code>。幣安大約只留近 30 日。data.binance.vision 沒有這兩個合約 OI 端點。</li>
         <li>回測批次可以先下 vision 日檔，再把尾端用 live hist 補到最新。網站上的全市場表就是這樣做到 2026-10-03。</li>
       </ul>
     </main>

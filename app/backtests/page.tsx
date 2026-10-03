@@ -123,7 +123,7 @@ export default function BacktestsPage() {
       <p className="note">
         掃描基準（只有 10× 與前 1 小時安靜）約 {backtests.filter_scan.baseline_events} 筆、
         每天 {backtests.filter_scan.baseline_per_day.toFixed(2)} 次。下面兩條是當時留下的候選；
-        線上採用的是第一條再加合約 OI（近 1 小時增倉且 15 分 OI% z ≥ 1）。
+        線上現在是 1 分進場，OI 改為 5 分張數（近 1 小時增倉且 5 分 OI% z ≥ 1）。這頁的 9 月表仍是當時的 15 分模擬。要調門檻重跑資料庫裡的 1 分 K 與 5 分 OI，用「參數」。
       </p>
       <div className="scroll">
         <table>
