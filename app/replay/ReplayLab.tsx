@@ -123,7 +123,7 @@ export function ReplayLab() {
       });
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(text.slice(0, 280) || `HTTP ${res.status}`);
+        throw new Error(explainApi(text, res.status));
       }
       setData((await res.json()) as Result);
     } catch (e) {
@@ -238,7 +238,7 @@ export function ReplayLab() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td className="left" colSpan={11}>沒有符合的訊號。</td>
+                    <td className="left" colSpan={11}>{data?.reason || "沒有符合的訊號。"}</td>
                   </tr>
                 )}
                 {rows.map((r) => (
@@ -287,6 +287,20 @@ function Num({
       />
     </label>
   );
+}
+
+function explainApi(text: string, status: number): string {
+  try {
+    const body = JSON.parse(text) as { code?: string; message?: string };
+    const msg = body.message || "";
+    if (body.code === "57014" || /statement timeout/i.test(msg)) {
+      return "回測超過資料庫 3 秒上限，清單沒算出來。先按「配合目前資料」，或只填一個幣別再跑。";
+    }
+    if (msg) return `回測失敗：${msg}`;
+  } catch {
+    /* not json */
+  }
+  return text.slice(0, 280) || `HTTP ${status}`;
 }
 
 function cls(x: number | null): string {

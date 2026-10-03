@@ -1,7 +1,10 @@
 -- Parameter replay of the 1m quiet-surge rule on stored spot 1m klines + 5m OI.
 -- Anon cannot read base tables. Security definer, read only.
--- OI has no 1m history: the z/1h gates use the completed 5m bar and are
--- applied on the last minute of that 5m bar (no lookahead into the bar).
+-- Must finish inside the anon role statement_timeout (3s): coverage first,
+-- then one as-of pass over completed 15m bars. OI z is computed only for
+-- symbols that already passed the price gates.
+-- OI has no 1m history: z / 1h use the completed 5m bar and apply on the
+-- last minute of that 5m bar (no lookahead into the bar).
 
 create or replace function public.dashboard_param_backtest(
   surge_mult double precision default 10,
@@ -20,9 +23,10 @@ create or replace function public.dashboard_param_backtest(
 )
 returns jsonb
 language plpgsql
-stable
+volatile
 security definer
 set search_path = public
+set enable_mergejoin = off
 as $$
 #variable_conflict use_column
 declare
@@ -49,6 +53,7 @@ declare
   v_oi_syms bigint;
   v_max15 integer;
   v_maxoi integer;
+  v_ready bigint;
   v_reason text;
   v_price bigint := 0;
   v_signals jsonb := '[]'::jsonb;
@@ -71,16 +76,17 @@ begin
   from oi_5m o
   where v_symbol is null or o.symbol = v_symbol;
 
-  select coalesce(max(n), 0) into v_max15
+  select coalesce(max(n), 0), coalesce(count(*) filter (where n >= greatest(v_base, v_q4)), 0)
+    into v_max15, v_ready
   from (
     select count(*)::int as n
     from (
-      select k15.symbol,
-             to_timestamp(floor(extract(epoch from k15.open_time) / 900) * 900) as bucket,
+      select k.symbol,
+             to_timestamp(floor(extract(epoch from k.open_time) / 900) * 900) as bucket,
              count(*) as minutes
-      from klines_1m k15
-      where k15.market_type = 'spot' and k15.is_closed
-        and (v_symbol is null or k15.symbol = v_symbol)
+      from klines_1m k
+      where k.market_type = 'spot' and k.is_closed
+        and (v_symbol is null or k.symbol = v_symbol)
       group by 1, 2
     ) b
     where minutes >= 15
@@ -94,51 +100,73 @@ begin
     group by o.symbol
   ) s;
 
-  if v_max15 < v_base then
-    v_reason := format('15 分已完成棒最多 %s 根，少於基準 %s 根，沒有訊號。把「基準 15 分根數」調小，或等 1 分 K 累積。', v_max15, v_base);
+  if coalesce(v_k_rows, 0) = 0 then
+    v_reason := '資料庫還沒有現貨 1 分 K，沒辦法回測。';
+  elsif v_max15 < greatest(v_base, v_q4) then
+    v_reason := format(
+      '15 分已完成棒最多 %s 根，少於這次要的基準 %s 根／安靜 %s 根，所以清單是空的。按「配合目前資料」，或把「基準 15 分根數」調到 %s 以下。線上 90 日（8640）要等 1 分 K 再累積。',
+      v_max15, v_base, v_q4, v_max15
+    );
   elsif v_need24 and v_max15 < 97 then
-    v_reason := format('要套用前 24h 上限至少需要 97 根已完成 15 分，目前最多 %s 根。取消「套用前 24h」或等資料補上。', v_max15);
+    v_reason := format(
+      '要套用前 24h 上限至少需要 97 根已完成 15 分，目前最多 %s 根。取消「套用前 24h」，或用「配合目前資料」。',
+      v_max15
+    );
   elsif coalesce(v_oi_rows, 0) = 0 then
-    v_reason := 'oi_5m 還沒有資料。Worker 暖機寫入後再跑；價格條件先不算進清單。';
+    v_reason := 'oi_5m 還沒有資料，OI 門檻沒辦法判。等 worker 寫入後再跑。';
+  elsif v_maxoi < v_min_p + 1 then
+    v_reason := format(
+      '單幣 5 分 OI 最多 %s 根，少於 z 要的樣本 %s，z 算不出來，清單會是空的。把「OI 最少樣本」調到 %s 以下（配合目前資料是 30）。',
+      v_maxoi, v_min_p, greatest(10, v_maxoi - 1)
+    );
   else
-    with m1 as (
-      select
-        k.symbol,
-        k.open_time,
-        k.close,
-        k.close * k.volume as quote,
-        to_timestamp(floor(extract(epoch from k.open_time) / 900) * 900) as b15,
-        lag(k.close) over (partition by k.symbol order by k.open_time) as prev_1m,
-        lag(k.open_time) over (partition by k.symbol order by k.open_time) as prev_1m_t
+    with raw15 as materialized (
+      select k.symbol,
+             to_timestamp(floor(extract(epoch from k.open_time) / 900) * 900) as bucket,
+             (array_agg(k.close order by k.open_time desc))[1]::float8 as close,
+             sum(k.close * k.volume)::float8 as quote,
+             count(*)::int as minutes
       from klines_1m k
-      where k.market_type = 'spot'
-        and k.is_closed
-        and k.close > 0
-        and k.volume >= 0
+      where k.market_type = 'spot' and k.is_closed and k.close > 0 and k.volume >= 0
+        and (v_symbol is null or k.symbol = v_symbol)
+      group by 1, 2
+    ),
+    comp as materialized (
+      select symbol, bucket, close, quote,
+             row_number() over (partition by symbol order by bucket)::int as rn,
+             sum(quote) over (partition by symbol order by bucket) as q_cum
+      from raw15
+      where minutes >= 15 and quote > 0 and close > 0
+    ),
+    m1 as materialized (
+      select k.symbol,
+             k.open_time,
+             k.close::float8 as close,
+             (k.close * k.volume)::float8 as quote,
+             to_timestamp(floor(extract(epoch from k.open_time) / 900) * 900) as b15,
+             lag(k.close::float8) over (partition by k.symbol order by k.open_time) as prev_1m,
+             lag(k.open_time) over (partition by k.symbol order by k.open_time) as prev_1m_t
+      from klines_1m k
+      where k.market_type = 'spot' and k.is_closed and k.close > 0 and k.volume >= 0
         and (v_symbol is null or k.symbol = v_symbol)
         and mod(extract(epoch from k.open_time)::bigint, 300) = 240
     ),
-    comp as (
-      select
-        symbol,
-        bucket,
-        close,
-        quote,
-        row_number() over (partition by symbol order by bucket) as rn,
-        sum(quote) over (partition by symbol order by bucket) as q_cum
-      from (
-        select
-          k.symbol,
-          to_timestamp(floor(extract(epoch from k.open_time) / 900) * 900) as bucket,
-          (array_agg(k.close order by k.open_time desc))[1] as close,
-          sum(k.close * k.volume) as quote,
-          count(*) as minutes
-        from klines_1m k
-        where k.market_type = 'spot' and k.is_closed
-          and (v_symbol is null or k.symbol = v_symbol)
-        group by 1, 2
-      ) raw
-      where minutes >= 15 and quote > 0 and close > 0
+    events as (
+      select symbol, bucket as ts, 1 as ord, rn,
+             null::timestamptz as open_time, null::float8 as close, null::float8 as quote,
+             null::float8 as prev_1m, null::timestamptz as prev_1m_t
+      from comp
+      union all
+      select symbol, b15, 0, null::int, open_time, close, quote, prev_1m, prev_1m_t
+      from m1
+    ),
+    tag as materialized (
+      select *,
+             max(rn) over (
+               partition by symbol order by ts, ord
+               rows between unbounded preceding and current row
+             ) as last_rn
+      from events
     ),
     fut_map as (
       select distinct on (r.symbol)
@@ -148,69 +176,64 @@ begin
       where r.rule_type = 'quiet_surge_early'
       order by r.symbol, r.enabled desc, r.id desc
     ),
-    priced as (
+    priced as materialized (
       select
-        m.symbol,
-        m.open_time,
-        m.open_time + interval '1 minute' as bar_close,
-        m.close,
-        m.quote,
-        last.close as prev_15_close,
-        (m.close / last.close - 1) as ret_bar,
-        case when c24.close is null then null else last.close / c24.close - 1 end as prior_24h,
-        m.quote / (base_mean / 15.0) as multiple,
-        med1 / base_mean as quiet_1h,
-        med4 / base_mean as quiet_4h,
-        coalesce(fm.fut, m.symbol) as fut,
-        to_timestamp(floor(extract(epoch from m.open_time) / 300) * 300) as bucket5
-      from m1 m
-      join lateral (
-        select c.*
-        from comp c
-        where c.symbol = m.symbol and c.bucket < m.b15
-        order by c.bucket desc
-        limit 1
-      ) last on true
-      left join comp prev
-        on prev.symbol = last.symbol and prev.rn = last.rn - v_base
-      left join comp c24
-        on c24.symbol = last.symbol and c24.rn = last.rn - 96
-      left join fut_map fm on fm.symbol = m.symbol
+        t.symbol,
+        t.open_time + interval '1 minute' as bar_close,
+        t.close,
+        t.quote / (b.base_mean / 15.0) as multiple,
+        med.med1 / b.base_mean as quiet_1h,
+        med.med4 / b.base_mean as quiet_4h,
+        (t.close / c.close - 1) as ret_bar,
+        case when c24.close is null then null else c.close / c24.close - 1 end as prior_24h,
+        to_timestamp(floor(extract(epoch from t.open_time) / 300) * 300) as bucket5,
+        coalesce(fm.fut, t.symbol) as fut
+      from tag t
+      join comp c on c.symbol = t.symbol and c.rn = t.last_rn
+      left join comp prev on prev.symbol = c.symbol and prev.rn = c.rn - v_base
+      left join comp c24 on c24.symbol = c.symbol and c24.rn = c.rn - 96
+      left join fut_map fm on fm.symbol = t.symbol
       cross join lateral (
         select case
-          when last.rn < v_base then null
-          when prev.q_cum is null then last.q_cum / v_base
-          else (last.q_cum - prev.q_cum) / v_base
+          when prev.q_cum is null then c.q_cum / v_base
+          else (c.q_cum - prev.q_cum) / v_base
         end as base_mean
       ) b
       cross join lateral (
         select
-          (
-            select percentile_cont(0.5) within group (order by q.quote)
-            from comp q
-            where q.symbol = last.symbol and q.rn <= last.rn and q.rn > last.rn - v_q1
-          ) as med1,
-          (
-            select percentile_cont(0.5) within group (order by q.quote)
-            from comp q
-            where q.symbol = last.symbol and q.rn <= last.rn and q.rn > last.rn - v_q4
-          ) as med4
+          (select percentile_cont(0.5) within group (order by q.quote)
+             from comp q
+            where q.symbol = c.symbol and q.rn <= c.rn and q.rn > c.rn - v_q1) as med1,
+          (select percentile_cont(0.5) within group (order by q.quote)
+             from comp q
+            where q.symbol = c.symbol and q.rn <= c.rn and q.rn > c.rn - v_q4) as med4
       ) med
-      where last.rn >= greatest(v_base, v_q4)
-        and base_mean > 0
-        and (not v_need24 or (c24.close is not null and c24.close > 0))
-        and m.quote / (base_mean / 15.0) >= v_surge
-        and med1 / base_mean <= v_quiet
-        and med4 / base_mean <= v_quiet
-        and (m.close / last.close - 1) >= v_min_ret
+      where t.open_time is not null
+        and t.last_rn >= greatest(v_base, v_q4)
+        and b.base_mean > 0
+        and t.quote / (b.base_mean / 15.0) >= v_surge
+        and med.med1 / b.base_mean <= v_quiet
+        and med.med4 / b.base_mean <= v_quiet
+        and (t.close / c.close - 1) >= v_min_ret
         and (
-          m.prev_1m_t is distinct from m.open_time - interval '1 minute'
-          or m.close >= m.prev_1m
+          t.prev_1m_t is distinct from t.open_time - interval '1 minute'
+          or t.close >= t.prev_1m
         )
         and (
           not v_need24
-          or (last.close / c24.close - 1) <= v_max_24h
+          or (c24.close is not null and c24.close > 0 and (c.close / c24.close - 1) <= v_max_24h)
         )
+    ),
+    oi as materialized (
+      select o.symbol, o.open_time, o.sum_open_interest::float8 as oi,
+        case
+          when lag(o.open_time) over w = o.open_time - interval '5 minutes'
+           and lag(o.sum_open_interest) over w > 0
+          then o.sum_open_interest::float8 / (lag(o.sum_open_interest) over w)::float8 - 1
+        end as pct
+      from oi_5m o
+      where o.symbol in (select distinct fut from priced)
+      window w as (partition by o.symbol order by o.open_time)
     ),
     scored as (
       select
@@ -224,11 +247,9 @@ begin
       from priced p
       join lateral (
         select
-          (select o.sum_open_interest from oi_5m o
-            where o.symbol = p.fut and o.open_time = p.bucket5) as start_oi,
-          (select o.sum_open_interest from oi_5m o
-            where o.symbol = p.fut and o.open_time = p.bucket5 + interval '5 minutes') as end_oi,
-          (select o.sum_open_interest from oi_5m o
+          (select o.oi from oi o where o.symbol = p.fut and o.open_time = p.bucket5) as start_oi,
+          (select o.oi from oi o where o.symbol = p.fut and o.open_time = p.bucket5 + interval '5 minutes') as end_oi,
+          (select o.oi from oi o
             where o.symbol = p.fut
               and o.open_time = p.bucket5 + interval '5 minutes' - (v_oi_1h * interval '5 minutes')
           ) as prev_1h,
@@ -237,18 +258,9 @@ begin
           select avg(x.pct) as mu, stddev_pop(x.pct) as sd, count(*) as n
           from (
             select c.pct
-            from (
-              select
-                o.open_time,
-                case
-                  when lag(o.open_time) over (order by o.open_time) = o.open_time - interval '5 minutes'
-                   and lag(o.sum_open_interest) over (order by o.open_time) > 0
-                  then o.sum_open_interest / lag(o.sum_open_interest) over (order by o.open_time) - 1
-                end as pct
-              from oi_5m o
-              where o.symbol = p.fut
-            ) c
-            where c.pct is not null
+            from oi c
+            where c.symbol = p.fut
+              and c.pct is not null
               and c.open_time < p.bucket5 + interval '5 minutes'
             order by c.open_time desc
             limit v_lookback
@@ -268,24 +280,28 @@ begin
       coalesce((
         select jsonb_agg(row_to_json(t)::jsonb order by t.bar_close desc)
         from (
-          select
-            symbol,
-            bar_close,
-            close,
-            multiple,
-            quiet_1h,
-            quiet_4h,
-            ret_bar,
-            prior_24h,
-            oi_1h,
-            oi_z,
-            oi_5m
+          select symbol, bar_close, close, multiple, quiet_1h, quiet_4h,
+                 ret_bar, prior_24h, oi_1h, oi_z, oi_5m
           from scored
           order by bar_close desc
           limit 300
         ) t
       ), '[]'::jsonb)
     into v_price, v_signals;
+
+    if coalesce(jsonb_array_length(v_signals), 0) = 0 then
+      if v_price = 0 then
+        v_reason := format(
+          '量價沒過：沒有任何一分鐘同時達到放量 %s×、安靜 ≤%s×、轉強 ≥%s。只檢查每根 5 分的最後 1 分鐘（對齊已走完的 5 分 OI）。有足夠標準的幣約 %s 檔。可再降放量倍數，或用「配合目前資料」。',
+          v_surge, v_quiet, to_char(v_min_ret, 'FM0.000'), v_ready
+        );
+      else
+        v_reason := format(
+          '量價先過了 %s 根，但 OI 沒過：要近 %s 根 5 分（約 1 小時）OI 上升，且 5 分變化 z ≥ %s（樣本至少 %s）。可把 OI z 或最少樣本調低。這不會改 Telegram。',
+          v_price, v_oi_1h, v_zmin, v_min_p
+        );
+      end if;
+    end if;
   end if;
 
   return jsonb_build_object(
