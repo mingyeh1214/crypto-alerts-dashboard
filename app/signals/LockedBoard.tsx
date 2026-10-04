@@ -11,6 +11,8 @@ type Signal = {
   open_ms: number;
   entry: number | null;
   score: number | null;
+  score_base?: number | null;
+  E?: number | null;
   z: number | null;
   turn_pct: number | null;
   atr15_pct: number | null;
@@ -33,9 +35,10 @@ type Payload = {
   last_tp: string;
   score_mean: number;
   score_median: number;
-  score_ge_5: number;
-  score_lt_0: number;
+  score_high_n: number;
+  score_low_n: number;
   red_flag_n: number;
+  red_flag_15_n: number;
   signals: Signal[];
 };
 
@@ -44,6 +47,13 @@ type SortKey = "time" | "score" | "d1_dn";
 function cls(n: number | null | undefined) {
   if (n == null || n === 0) return "";
   return n > 0 ? "up" : "dn";
+}
+
+function scoreCls(n: number | null | undefined) {
+  if (n == null) return "";
+  if (n >= 8) return "up";
+  if (n <= 3) return "dn";
+  return "";
 }
 
 function num(n: number | null | undefined, d = 2) {
@@ -171,11 +181,12 @@ export function LockedBoard() {
       <div className="cards">
         <div className="card"><b>{data.n}</b><span>鎖定訊號</span><em>{data.symbols} 檔現貨</em></div>
         <div className="card"><b>{data.per_day}</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
-        <div className="card"><b>{num(data.score_median, 2)}</b><span>Score 中位</span><em>均值 {num(data.score_mean, 2)}</em></div>
-        <div className="card"><b>{data.red_flag_n}</b><span>任一時窗 ≤ −10%</span><em>Score ≥ +5 有 {data.score_ge_5} 筆</em></div>
+        <div className="card"><b>{num(data.score_median, 0)}</b><span>Score 中位（1–10）</span><em>均值 {num(data.score_mean, 2)}</em></div>
+        <div className="card"><b>{data.score_high_n}</b><span>Score 8–10</span><em>1–3 分有 {data.score_low_n} 筆</em></div>
+        <div className="card"><b>{data.red_flag_n}</b><span>任一時窗 ≤ −10%</span><em>其中 ≤ −15% 有 {data.red_flag_15_n} 筆</em></div>
       </div>
       <p className="note">
-        視窗 {data.first_tp} → {data.last_tp}（台北）。Score &lt; 0 有 {data.score_lt_0} 筆。
+        視窗 {data.first_tp} → {data.last_tp}（台北）。Score 是 1–10 的整數，10 最好：四個時窗的優勢加權後，在這 432 筆裡切十分位，再套紅旗。
         GTC 9/30 15:31、SAGA 9/10 21:39、SAND 10/02 14:51 都在表內。
       </p>
 
@@ -235,7 +246,7 @@ export function LockedBoard() {
                   <td>{s.turn_pct == null ? "—" : `${num(s.turn_pct, 2)}%`}</td>
                   <td>{s.atr15_pct == null ? "—" : num(s.atr15_pct, 2)}</td>
                   <td className={cls(s.funding_pct)}>{s.funding_pct == null ? "—" : `${num(s.funding_pct, 4)}%`}</td>
-                  <td className={cls(s.score)}>{num(s.score, 2)}</td>
+                  <td className={scoreCls(s.score)} title={s.E == null ? undefined : `E ${num(s.E, 2)} · 分位 ${s.score_base ?? "—"}`}>{s.score == null ? "—" : s.score}</td>
                   {winCells(s.win, s.pair + s.open_ms)}
                 </tr>
               );

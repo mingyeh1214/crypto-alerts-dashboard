@@ -33,7 +33,8 @@ export default function BacktestsPage() {
       <h1>回測模擬</h1>
       <div className="banner">
         目前鎖定規則的 432 筆（ATR 0.8–2.5、funding ≥ −0.10%、同幣 24 小時）在
-        {" "}<a href="/signals">訊號頁</a>，含各幣 K 線。下面這頁仍是較早的 quiet_surge 15 分模擬，用來對照。
+        {" "}<a href="/signals">訊號頁</a>，含各幣 K 線與 1–10 的 Score。
+        這套分數只定義在那 432 筆上。下面這頁仍是較早的 quiet_surge 15 分模擬，用來對照，沒有套用同一套 Score。
       </div>
       <p className="lead">
         模擬起點是台北 2026-09-01，收到當時最新的 15 分 K（約 2026-10-03）。
