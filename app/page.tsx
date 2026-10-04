@@ -35,7 +35,7 @@ export default function HomePage() {
             <li>看進場後 1 小時、4 小時、1 日的最大漲與最大跌，不看收盤。</li>
             <li>Score 把三段的「上檔＋下檔」做成 0.5／0.3／0.2 加權。中位約 +0.35，≥ +5 有 98 筆。</li>
             <li>任一時窗最大跌 ≤ −10% 有 53 筆，表上標成紅旗。</li>
-            <li>K 線在訊號頁，箭頭標在發送那一根。</li>
+            <li>K 線在訊號頁，用 TradingView 幣安現貨圖，旁邊清單標發送時間。</li>
           </ul>
           <p><Link href="/signals">打開訊號與 K 線 →</Link></p>
         </section>

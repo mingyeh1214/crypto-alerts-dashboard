@@ -10,7 +10,7 @@ export default function SignalsPage() {
       <h1>鎖定訊號</h1>
       <p className="lead">
         P12_z278 ＋ 15 分 ATR 0.8%～2.5% ＋ 資金費率不低於 −0.10% ＋ 同幣冷卻 24 小時。
-        只含幣安現貨 USDT。下面每一筆都能在 K 線上看到發送時間。
+        只含幣安現貨 USDT。K 線用 TradingView 幣安現貨圖（量能、EMA、MACD、RSI），發送時間在圖旁清單對到每一筆。
       </p>
       <LockedBoard />
       <details className="fold">

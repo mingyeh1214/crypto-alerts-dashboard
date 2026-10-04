@@ -1,151 +1,150 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { IChartApi, ISeriesApi, SeriesMarker, Time, UTCTimestamp } from "lightweight-charts";
-
-const TPE = 8 * 3600;
-
-type Candle = { time: number; open: number; high: number; low: number; close: number };
+import { useEffect, useMemo, useRef } from "react";
 
 export type ChartMarker = { open_ms: number; label: string };
 
-const STEP: Record<string, number> = {
-  "1m": 60,
-  "5m": 5 * 60,
-  "15m": 15 * 60,
-  "1h": 60 * 60,
-  "4h": 4 * 60 * 60,
+const TV_INTERVAL: Record<string, string> = {
+  "1m": "1",
+  "5m": "5",
+  "15m": "15",
+  "1h": "60",
+  "4h": "240",
 };
 
-function bucket(openMs: number, interval: string) {
-  const step = STEP[interval] ?? 900;
-  return Math.floor(openMs / 1000 / step) * step + TPE;
-}
+const fmt = new Intl.DateTimeFormat("zh-TW", {
+  timeZone: "Asia/Taipei",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
 
 export function SignalChart({
   pair,
   interval,
   markers,
   focusMs,
+  onPick,
 }: {
   pair: string;
   interval: string;
   markers: ChartMarker[];
   focusMs: number | null;
+  onPick?: (openMs: number) => void;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const [status, setStatus] = useState("載入 K 線…");
-  const [n, setN] = useState(0);
+  const activeRef = useRef<HTMLButtonElement | null>(null);
+  const symbol = `BINANCE:${pair}`;
+  const tvInterval = TV_INTERVAL[interval] ?? "15";
+
+  const ordered = useMemo(
+    () => [...markers].sort((a, b) => b.open_ms - a.open_ms),
+    [markers],
+  );
 
   useEffect(() => {
-    const el = host.current;
-    if (!el) return;
-    let dead = false;
-    const ac = new AbortController();
-    setStatus("載入 K 線…");
-    setN(0);
-    chartRef.current?.remove();
-    chartRef.current = null;
-    seriesRef.current = null;
+    const root = host.current;
+    if (!root) return;
+    root.replaceChildren();
 
-    (async () => {
-      const res = await fetch(`/api/klines?symbol=${encodeURIComponent(pair)}&interval=${interval}`, {
-        signal: ac.signal,
-      });
-      const body = (await res.json()) as { candles?: Candle[]; error?: string };
-      if (!res.ok || !body.candles) throw new Error(body.error || `HTTP ${res.status}`);
-      if (dead || !host.current) return;
-      const lc = await import("lightweight-charts");
-      if (dead || !host.current) return;
-      const chart = lc.createChart(host.current, {
-        autoSize: true,
-        layout: {
-          background: { type: lc.ColorType.Solid, color: "#131922" },
-          textColor: "#93a0b0",
-          fontFamily: '"IBM Plex Sans", "Noto Sans TC", sans-serif',
-        },
-        grid: {
-          vertLines: { color: "#243140" },
-          horzLines: { color: "#243140" },
-        },
-        rightPriceScale: { borderColor: "#2a3544" },
-        timeScale: { borderColor: "#2a3544", timeVisible: true, secondsVisible: false },
-        crosshair: { mode: lc.CrosshairMode.Normal },
-      });
-      const series = chart.addCandlestickSeries({
-        upColor: "#3cbe88",
-        downColor: "#e36d6d",
-        borderUpColor: "#3cbe88",
-        borderDownColor: "#e36d6d",
-        wickUpColor: "#3cbe88",
-        wickDownColor: "#e36d6d",
-      });
-      series.setData(
-        body.candles.map((c) => ({
-          ...c,
-          time: (c.time + TPE) as UTCTimestamp,
-        })),
-      );
-      chartRef.current = chart;
-      seriesRef.current = series;
-      setN(body.candles.length);
-      setStatus("");
-    })().catch((err: unknown) => {
-      if (dead || (err instanceof DOMException && err.name === "AbortError")) return;
-      setStatus(err instanceof Error ? err.message : "K 線載入失敗");
+    const widget = document.createElement("div");
+    widget.className = "tradingview-widget-container__widget";
+    widget.style.height = "calc(100% - 32px)";
+    widget.style.width = "100%";
+
+    const copy = document.createElement("div");
+    copy.className = "tradingview-widget-copyright";
+    const link = document.createElement("a");
+    link.href = `https://www.tradingview.com/symbols/${symbol.replace(":", "-")}/?exchange=BINANCE`;
+    link.target = "_blank";
+    link.rel = "noopener nofollow";
+    const name = document.createElement("span");
+    name.className = "blue-text";
+    name.textContent = `${pair} chart`;
+    link.append(name);
+    const mark = document.createElement("span");
+    mark.className = "trademark";
+    mark.textContent = " by TradingView";
+    copy.append(link, mark);
+
+    const script = document.createElement("script");
+    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.async = true;
+    script.type = "text/javascript";
+    script.text = JSON.stringify({
+      autosize: true,
+      symbol,
+      interval: tvInterval,
+      timezone: "Asia/Taipei",
+      theme: "dark",
+      style: "1",
+      locale: "zh_TW",
+      backgroundColor: "#131922",
+      gridColor: "rgba(42, 53, 68, 0.5)",
+      hide_top_toolbar: false,
+      hide_side_toolbar: false,
+      hide_legend: false,
+      allow_symbol_change: false,
+      save_image: true,
+      withdateranges: true,
+      details: true,
+      calendar: false,
+      studies: [
+        "STD;EMA",
+        "STD;MACD",
+        "STD;RSI",
+        "Volume@tv-basicstudies",
+      ],
+      support_host: "https://www.tradingview.com",
     });
 
+    root.append(widget, copy, script);
     return () => {
-      dead = true;
-      ac.abort();
-      chartRef.current?.remove();
-      chartRef.current = null;
-      seriesRef.current = null;
+      root.replaceChildren();
     };
-  }, [pair, interval]);
+  }, [symbol, pair, tvInterval]);
 
   useEffect(() => {
-    const chart = chartRef.current;
-    const series = seriesRef.current;
-    if (!chart || !series || status) return;
-    const merged = new Map<number, string[]>();
-    for (const m of markers) {
-      const t = bucket(m.open_ms, interval);
-      const list = merged.get(t) ?? [];
-      list.push(m.label);
-      merged.set(t, list);
-    }
-    const marks: SeriesMarker<Time>[] = [...merged.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([time, labels]) => ({
-        time: time as UTCTimestamp,
-        position: "aboveBar",
-        color: "#e4b15a",
-        shape: "arrowDown",
-        text: labels.length > 2 ? `${labels[0]} +${labels.length - 1}` : labels.join(" · "),
-      }));
-    series.setMarkers(marks);
-    if (focusMs != null) {
-      const center = bucket(focusMs, interval);
-      const pad = interval === "5m" ? 18 * 3600 : interval === "1h" || interval === "4h" ? 6 * 86400 : 2.5 * 86400;
-      chart.timeScale().setVisibleRange({
-        from: (center - pad) as UTCTimestamp,
-        to: (center + pad) as UTCTimestamp,
-      });
-    } else {
-      chart.timeScale().fitContent();
-    }
-  }, [markers, focusMs, interval, status, n]);
+    activeRef.current?.scrollIntoView({ block: "nearest" });
+  }, [focusMs, pair]);
+
+  const chartUrl = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(symbol)}&interval=${tvInterval}`;
 
   return (
     <div>
-      <div className="chart-box" ref={host} />
+      <div className="chart-layout">
+        <div className="chart-box tv-chart" ref={host} />
+        <aside className="mark-list" aria-label="訊號發送時間">
+          <p>發送時間（台北）</p>
+          {ordered.length === 0 ? (
+            <span className="note">這檔沒有鎖定訊號。</span>
+          ) : (
+            ordered.map((m) => {
+              const on = focusMs === m.open_ms;
+              return (
+                <button
+                  key={m.open_ms}
+                  type="button"
+                  ref={on ? activeRef : undefined}
+                  className={on ? "on" : ""}
+                  onClick={() => onPick?.(m.open_ms)}
+                >
+                  {m.label || fmt.format(m.open_ms)}
+                </button>
+              );
+            })
+          )}
+        </aside>
+      </div>
       <p className="note">
-        {status
-          ? status
-          : `${pair} ${interval} · ${n.toLocaleString("en-US")} 根 · 時間軸是台北。琥珀色箭頭標在訊號那一根 K。`}
+        {pair} 現貨 · TradingView 進階圖（BINANCE:{pair}）· 時間軸台北。
+        K 線自帶成交量，並預載 EMA、MACD、RSI；週期、畫線與其他指標可在圖上直接改。
+        免費圖不能替我們畫箭頭，右邊清單就是發送時間；點一筆會在表上對到同一列。
+        {focusMs != null ? ` 目前選取 ${fmt.format(focusMs)}。` : ""}
+        {" "}
+        <a href={chartUrl} target="_blank" rel="noopener noreferrer">在 TradingView 打開</a>
       </p>
     </div>
   );

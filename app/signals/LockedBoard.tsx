@@ -172,7 +172,17 @@ export function LockedBoard() {
         </div>
         <span className="note">{pair.replace(/USDT$/, "")} 本頁 {coinN} 筆訊號</span>
       </div>
-      <SignalChart pair={pair} interval={interval} markers={markers} focusMs={focusMs} />
+      <SignalChart
+        pair={pair}
+        interval={interval}
+        markers={markers}
+        focusMs={focusMs}
+        onPick={(ms) => {
+          setFocusMs(ms);
+          const idx = filtered.findIndex((s) => s.pair === pair && s.open_ms === ms);
+          if (idx >= 0) setPage(Math.floor(idx / pageSize));
+        }}
+      />
 
       <h2>訊號明細</h2>
       <div className="filters">
