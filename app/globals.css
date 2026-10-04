@@ -67,7 +67,7 @@ th:first-child, td:first-child, td.left, th.left { text-align: left; }
 th { color: var(--muted); font-weight: 500; }
 td.up { color: var(--up); }
 td.dn { color: var(--down); }
-.scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.scroll { overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 12px; }
 .scroll table { min-width: 720px; }
 
 .ext { display: flex; flex-direction: column; gap: 1px; line-height: 1.25; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -164,11 +164,9 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
 }
 
 .chart-sticky {
-  position: sticky;
-  top: 0;
-  z-index: 6;
-  background: color-mix(in srgb, var(--bg) 94%, transparent);
-  backdrop-filter: blur(8px);
+  position: static;
+  z-index: auto;
+  background: transparent;
   padding-bottom: 8px;
   margin-bottom: 8px;
 }
@@ -176,7 +174,7 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
 .chart-layout { display: grid; grid-template-columns: 1fr 168px; gap: 10px; align-items: stretch; }
 @media (max-width: 800px) { .chart-layout { grid-template-columns: 1fr; } }
 .chart-frame { position: relative; min-height: 320px; }
-.chart-box { height: min(720px, 82vh); min-height: 540px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #131922; }
+.chart-box { height: min(520px, 58vh); min-height: 380px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #131922; }
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 6px; color: var(--muted); font-size: 0.75rem; }
 .chart-legend i { display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle; border-radius: 2px; }
 .chart-box.tv-chart { height: min(640px, 68vh); min-height: 420px; }

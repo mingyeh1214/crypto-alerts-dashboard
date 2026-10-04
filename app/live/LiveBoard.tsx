@@ -45,6 +45,7 @@ type Snapshot = {
   generated_at: string;
   symbols_spot_enabled: number;
   rules_quiet_surge_enabled: number;
+  rules_p12_enabled?: number;
   rules_enabled_other: number;
   watches_active: number;
   watches_by_status: Record<string, number>;
@@ -108,12 +109,12 @@ export function LiveBoard() {
 
       <div className="cards">
         <div className="card">
-          <b>{data ? data.rules_quiet_surge_enabled : "…"}</b>
-          <span>啟用中的 quiet_surge_early</span>
+          <b>{data ? (data.rules_p12_enabled ?? data.rules_enabled_other ?? 0) : "…"}</b>
+          <span>啟用中的 P12_z278</span>
         </div>
         <div className="card">
-          <b>{meta.bars_ready ?? "…"}</b>
-          <span>30 日基準就緒（可觸發）</span>
+          <b>{meta.p12_ready ?? meta.quotes_ready ?? "…"}</b>
+          <span>z 基準就緒（可觸發）</span>
         </div>
         <div className="card">
           <b>{meta.oi_ready ?? "…"}</b>
@@ -132,9 +133,7 @@ export function LiveBoard() {
 
       <h2>最近警報</h2>
       <p className="note">
-        新的進場是 1 分收盤（安靜後放量）。表裡仍可能有舊的 15 分進場與更早的箱型、量價紀錄。目前啟用的規則只有 quiet_surge_early
-        {data ? `（其他啟用 ${data.rules_enabled_other} 條）` : ""}。
-        全市場上線後，新的進場才會出現在這裡。
+        只顯示 P12_z278。舊的 quiet_surge、箱型與量價警報已封存，不會出現在這張表。還沒有新進場時表是空的。
       </p>
       <div className="scroll">
         <table>
@@ -148,7 +147,7 @@ export function LiveBoard() {
             </tr>
           </thead>
           <tbody>
-            {(data?.recent_alerts ?? []).map((a) => (
+            {(data?.recent_alerts ?? []).filter((a) => a.alert_type === "p12_z278").map((a) => (
               <tr key={a.id}>
                 <td className="left">{taipei(a.triggered_at)}</td>
                 <td className="left">{a.symbol}</td>
@@ -157,7 +156,7 @@ export function LiveBoard() {
                 <td>{a.telegram_sent ? "已送" : "未送"}</td>
               </tr>
             ))}
-            {data && data.recent_alerts.length === 0 ? (
+            {data && data.recent_alerts.filter((a) => a.alert_type === "p12_z278").length === 0 ? (
               <tr><td className="left" colSpan={5}>還沒有警報</td></tr>
             ) : null}
           </tbody>
@@ -165,6 +164,7 @@ export function LiveBoard() {
       </div>
 
       <h2>進場後追蹤</h2>
+      <p className="note">鎖定規則沒有 +5 分／+15 分追蹤。舊的 quiet_surge 追蹤已封存。</p>
       <div className="scroll">
         <table>
           <thead>
@@ -181,7 +181,7 @@ export function LiveBoard() {
             </tr>
           </thead>
           <tbody>
-            {(data?.recent_watches ?? []).map((wrow) => (
+            {(data?.recent_watches ?? []).filter((wrow) => wrow.status === "active" && false).map((wrow) => (
               <tr key={wrow.id}>
                 <td className="left">{taipei(wrow.alert_time)}</td>
                 <td className="left">{wrow.symbol}</td>
@@ -194,19 +194,15 @@ export function LiveBoard() {
                 <td className="left">{wrow.end_reason ?? "—"}</td>
               </tr>
             ))}
-            {data && data.recent_watches.length === 0 ? (
+            {data && data.recent_watches.filter(() => false).length === 0 ? (
               <tr><td className="left" colSpan={9}>目前沒有追蹤紀錄</td></tr>
             ) : null}
           </tbody>
         </table>
       </div>
 
-      <h2>監控名單（{data?.quiet_surge_symbols.length ?? "…"}）</h2>
-      <div className="chips">
-        {(data?.quiet_surge_symbols ?? []).map((s) => (
-          <span className="chip" key={s}>{s.replace(/USDT$/, "")}</span>
-        ))}
-      </div>
+      <h2>現貨宇宙</h2>
+      <p className="note">啟用中的現貨 {data ? data.symbols_spot_enabled : "…"} 檔（幣安現貨 USDT ∩ 永續）。worker 心跳的 meta.p12_universe 是實際套用鎖定規則的名單。</p>
     </div>
   );
 }

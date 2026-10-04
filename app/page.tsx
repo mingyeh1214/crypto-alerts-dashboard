@@ -11,7 +11,7 @@ export default function HomePage() {
         目前鎖定的規則代號是 <code>P12_z278</code>。只做幣安現貨 USDT，而且該幣要有對應的 U 本位永續，才能讀到持倉量與資金費率。沒有現貨的永續，以及槓桿代幣，都不在這份掃描裡。每一根 1 分 K 收盤就評估一次，不等 15 分走完。
       </p>
       <div className="banner">
-        網站上的規則說明與訊號表已經對齊這套鎖定口徑。Telegram 與 Railway 上的 worker 仍是先前的 <code>quiet_surge_early</code>，即時頁看到的還是那台 worker，不是這份清單。
+        網站、Railway worker 與 Telegram 都是這套鎖定口徑（P12_z278、ATR 0.8–2.5、資金費率地板、同幣 24 小時冷卻）。舊的 quiet_surge 不再發訊，也不再列在訊號頁。
       </div>
       <div className="cards">
         <div className="card"><b>432</b><span>9 月至今鎖定訊號</span><em>245 檔現貨</em></div>

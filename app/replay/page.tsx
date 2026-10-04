@@ -1,18 +1,19 @@
 import type { Metadata } from "next";
-import { ReplayLab } from "./ReplayLab";
+import Link from "next/link";
 
-export const metadata: Metadata = { title: "參數回測 · 盯盤哨兵" };
+export const metadata: Metadata = { title: "參數 · 盯盤哨兵" };
 
 export default function ReplayPage() {
   return (
     <main>
-      <h1>參數回測</h1>
+      <h1>參數</h1>
       <p className="lead">
-        用資料庫裡的現貨 1 分 K，加上已寫入的 5 分合約 OI，依你調的門檻重跑安靜後放量。
-        價格仍是逐分鐘；OI 沒有 1 分歷史，所以 z 與 1 小時方向用「剛走完的那根 5 分」，
-        而且只記在該 5 分的最後一分鐘，避免用到未來的張數。
+        舊的「安靜後放量」參數實驗室已關閉。線上不再接受那套門檻。
+        鎖定規則是固定的 P12_z278，不在這頁重跑。
       </p>
-      <ReplayLab />
+      <p>
+        <Link href="/signals">看鎖定訊號 →</Link>
+      </p>
     </main>
   );
 }
