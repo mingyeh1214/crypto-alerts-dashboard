@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SignalChart, type ChartMarker } from "@/components/SignalChart";
-import { winCells, winHeaders, type WinMap } from "@/components/ExtremeCell";
+import { winCells, type WinMap } from "@/components/ExtremeCell";
 
 type Signal = {
   symbol: string;
@@ -42,7 +42,79 @@ type Payload = {
   signals: Signal[];
 };
 
-type SortKey = "time" | "score" | "d1_dn";
+type SortKey =
+  | "time"
+  | "symbol"
+  | "entry"
+  | "z"
+  | "turn"
+  | "atr"
+  | "funding"
+  | "score"
+  | "m15_up"
+  | "m15_dn"
+  | "h1_up"
+  | "h1_dn"
+  | "h4_up"
+  | "h4_dn"
+  | "d1_up"
+  | "d1_dn";
+
+type SortDir = "asc" | "desc";
+
+const WIN_COLS: { key: SortKey; label: string }[] = [
+  { key: "m15_up", label: "15分最大漲" },
+  { key: "m15_dn", label: "15分最大跌" },
+  { key: "h1_up", label: "1時最大漲" },
+  { key: "h1_dn", label: "1時最大跌" },
+  { key: "h4_up", label: "4時最大漲" },
+  { key: "h4_dn", label: "4時最大跌" },
+  { key: "d1_up", label: "1日最大漲" },
+  { key: "d1_dn", label: "1日最大跌" },
+];
+
+function sortValue(s: Signal, key: SortKey): number | string | null {
+  switch (key) {
+    case "time":
+      return s.open_ms;
+    case "symbol":
+      return s.symbol;
+    case "entry":
+      return s.entry;
+    case "z":
+      return s.z;
+    case "turn":
+      return s.turn_pct;
+    case "atr":
+      return s.atr15_pct;
+    case "funding":
+      return s.funding_pct;
+    case "score":
+      return s.score;
+    default: {
+      const [win, side] = key.split("_") as ["m15" | "h1" | "h4" | "d1", "up" | "dn"];
+      const cell = s.win?.[win];
+      if (!cell) return null;
+      return side === "up" ? cell.up : cell.dn;
+    }
+  }
+}
+
+function compareSignals(a: Signal, b: Signal, key: SortKey, dir: SortDir): number {
+  const av = sortValue(a, key);
+  const bv = sortValue(b, key);
+  if (key === "symbol") {
+    const c = String(av ?? "").localeCompare(String(bv ?? ""), "en", { sensitivity: "base", numeric: true });
+    return dir === "asc" ? c : -c;
+  }
+  const an = av == null || (typeof av === "number" && Number.isNaN(av));
+  const bn = bv == null || (typeof bv === "number" && Number.isNaN(bv));
+  if (an && bn) return 0;
+  if (an) return 1;
+  if (bn) return -1;
+  const c = (av as number) - (bv as number);
+  return dir === "asc" ? c : -c;
+}
 
 function cls(n: number | null | undefined) {
   if (n == null || n === 0) return "";
@@ -75,7 +147,7 @@ export function LockedBoard() {
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState<SortKey>("time");
+  const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "time", dir: "desc" });
   const [redOnly, setRedOnly] = useState(false);
   const [interval, setInterval] = useState("15m");
   const [pair, setPair] = useState("GTCUSDT");
@@ -109,14 +181,33 @@ export function LockedBoard() {
     if (redOnly) rows = rows.filter((r) => r.red === 1);
     const copy = [...rows];
     copy.sort((a, b) => {
-      if (sort === "score") return (b.score ?? -1e9) - (a.score ?? -1e9) || a.open_ms - b.open_ms;
-      if (sort === "d1_dn") return (a.d1_dn ?? 0) - (b.d1_dn ?? 0);
-      return b.open_ms - a.open_ms;
+      const c = compareSignals(a, b, sort.key, sort.dir);
+      if (c !== 0) return c;
+      return b.open_ms - a.open_ms || a.symbol.localeCompare(b.symbol, "en");
     });
     return copy;
   }, [data, q, redOnly, sort]);
 
-  useEffect(() => setPage(0), [q, redOnly, sort]);
+  useEffect(() => setPage(0), [q, redOnly, sort.key, sort.dir]);
+
+  function toggleSort(key: SortKey) {
+    setSort((prev) => {
+      if (prev.key === key) return { key, dir: prev.dir === "asc" ? "desc" : "asc" };
+      return { key, dir: key === "symbol" ? "asc" : "desc" };
+    });
+  }
+
+  function SortTh({ col, label, left }: { col: SortKey; label: string; left?: boolean }) {
+    const on = sort.key === col;
+    return (
+      <th className={left ? "left" : undefined} aria-sort={on ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+        <button type="button" className={on ? "sort-th on" : "sort-th"} onClick={() => toggleSort(col)}>
+          {label}
+          <span className="sort-mark">{on ? (sort.dir === "asc" ? "↑" : "↓") : ""}</span>
+        </button>
+      </th>
+    );
+  }
 
   const markers: ChartMarker[] = useMemo(() => {
     return (data?.signals ?? [])
@@ -196,33 +287,27 @@ export function LockedBoard() {
           搜尋幣別
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="GTC / SAGA" />
         </label>
-        <label className="field">
-          排序
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)}>
-            <option value="time">時間（新→舊）</option>
-            <option value="score">Score（高→低）</option>
-            <option value="d1_dn">1 日最大跌（深→淺）</option>
-          </select>
-        </label>
         <label className="field inline">
           <input type="checkbox" checked={redOnly} onChange={(e) => setRedOnly(e.target.checked)} />
           只看 ≤ −10% 紅旗
         </label>
       </div>
-      <p className="note">點時間或幣別會把上面的 K 線跳到那一筆。每一格是進場之後該時段的最大漲或最大跌：價位、台北時間、相對進場收盤的漲跌幅。15 分／1 時／4 時／1 日分別是之後 15、60、240、1440 根 1 分 K 的最高價與最低價；時間是那根 K 的開盤。標「未滿」表示資料還沒走完。</p>
+      <p className="note">點欄位標題可在升序與降序之間切換，空值排在最後。點時間或幣別會把上面的 K 線跳到那一筆。每一格是進場之後該時段的最大漲或最大跌：價位、台北時間、相對進場收盤的漲跌幅。15 分／1 時／4 時／1 日分別是之後 15、60、240、1440 根 1 分 K 的最高價與最低價；時間是那根 K 的開盤。標「未滿」表示資料還沒走完。最大漲跌欄位依漲跌幅排序。</p>
       <div className="scroll">
         <table>
           <thead>
             <tr>
-              <th className="left">發送（台北）</th>
-              <th className="left">幣</th>
-              <th>進場價</th>
-              <th>z</th>
-              <th>轉強</th>
-              <th>ATR%</th>
-              <th>資金費率</th>
-              <th>Score</th>
-              {winHeaders()}
+              <SortTh col="time" label="發送（台北）" left />
+              <SortTh col="symbol" label="幣" left />
+              <SortTh col="entry" label="進場價" />
+              <SortTh col="z" label="z" />
+              <SortTh col="turn" label="轉強" />
+              <SortTh col="atr" label="ATR%" />
+              <SortTh col="funding" label="資金費率" />
+              <SortTh col="score" label="Score" />
+              {WIN_COLS.map((c) => (
+                <SortTh key={c.key} col={c.key} label={c.label} />
+              ))}
             </tr>
           </thead>
           <tbody>

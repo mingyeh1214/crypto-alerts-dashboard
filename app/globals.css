@@ -65,6 +65,14 @@ table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: right; vertical-align: top; }
 th:first-child, td:first-child, td.left, th.left { text-align: left; }
 th { color: var(--muted); font-weight: 500; }
+button.sort-th {
+  background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; font: inherit; font-weight: 500;
+  cursor: pointer; width: 100%; text-align: inherit;
+  white-space: nowrap;
+}
+button.sort-th:hover, button.sort-th.on { color: var(--text); }
+button.sort-th .sort-mark { display: inline-block; width: 0.9em; margin-left: 2px; color: var(--amber); }
 td.up { color: var(--up); }
 td.dn { color: var(--down); }
 .scroll { overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 12px; }
