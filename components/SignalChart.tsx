@@ -10,6 +10,7 @@ type Candle = { time: number; open: number; high: number; low: number; close: nu
 export type ChartMarker = { open_ms: number; label: string };
 
 const STEP: Record<string, number> = {
+  "1m": 60,
   "5m": 5 * 60,
   "15m": 15 * 60,
   "1h": 60 * 60,
