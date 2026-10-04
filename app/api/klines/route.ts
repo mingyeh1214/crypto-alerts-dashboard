@@ -17,7 +17,7 @@ const HOSTS = [
   "https://api.binance.com",
 ];
 
-type Candle = { time: number; open: number; high: number; low: number; close: number };
+type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
 async function fetchChunk(symbol: string, interval: string, start: number, end: number): Promise<Candle[]> {
   let lastErr = "binance unavailable";
@@ -46,6 +46,7 @@ async function fetchChunk(symbol: string, interval: string, start: number, end: 
         high: Number(row[2]),
         low: Number(row[3]),
         close: Number(row[4]),
+        volume: Number(row[5]),
       };
     });
   }
@@ -53,10 +54,12 @@ async function fetchChunk(symbol: string, interval: string, start: number, end: 
 }
 
 export async function GET(req: NextRequest) {
-  const symbol = (req.nextUrl.searchParams.get("symbol") || "").toUpperCase();
+  const raw = (req.nextUrl.searchParams.get("symbol") || "").trim();
+  // ASCII tickers are uppercased; Chinese spot names (e.g. 币安人生USDT) stay as listed.
+  const symbol = /^[\x00-\x7F]+$/.test(raw) ? raw.toUpperCase() : raw;
   const interval = req.nextUrl.searchParams.get("interval") || "15m";
   const step = INTERVALS[interval];
-  if (!/^[A-Z0-9]{2,30}$/.test(symbol) || !symbol.endsWith("USDT") || !step) {
+  if (!/^[\p{L}\p{N}]{2,32}$/u.test(symbol) || !symbol.endsWith("USDT") || !step) {
     return NextResponse.json({ error: "參數不正確" }, { status: 400 });
   }
   const end = Date.now();

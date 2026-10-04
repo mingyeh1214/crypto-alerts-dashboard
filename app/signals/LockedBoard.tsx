@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SignalChart, type ChartMarker } from "@/components/SignalChart";
+import { SignalChart, type ChartEngine, type ChartMarker } from "@/components/SignalChart";
 
 type Signal = {
   symbol: string;
@@ -71,6 +71,7 @@ export function LockedBoard() {
   const [sort, setSort] = useState<SortKey>("time");
   const [redOnly, setRedOnly] = useState(false);
   const [interval, setInterval] = useState("15m");
+  const [engine, setEngine] = useState<ChartEngine>("site");
   const [pair, setPair] = useState("GTCUSDT");
   const [focusMs, setFocusMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
@@ -134,18 +135,8 @@ export function LockedBoard() {
 
   return (
     <section>
-      <div className="cards">
-        <div className="card"><b>{data.n}</b><span>鎖定訊號</span><em>{data.symbols} 檔現貨</em></div>
-        <div className="card"><b>{data.per_day}</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
-        <div className="card"><b>{num(data.score_median, 2)}</b><span>Score 中位</span><em>均值 {num(data.score_mean, 2)}</em></div>
-        <div className="card"><b>{data.red_flag_n}</b><span>任一時窗 ≤ −10%</span><em>Score ≥ +5 有 {data.score_ge_5} 筆</em></div>
-      </div>
-      <p className="note">
-        視窗 {data.first_tp} → {data.last_tp}（台北）。Score &lt; 0 有 {data.score_lt_0} 筆。
-        GTC 9/30 15:31、SAGA 9/10 21:39、SAND 10/02 14:51 都在表內。
-      </p>
-
-      <h2 id="kline">K 線與訊號時間</h2>
+      <div className="chart-sticky" id="kline">
+      <h2>K 線與訊號時間</h2>
       <div className="toolbar">
         <label className="field">
           幣別
@@ -170,6 +161,10 @@ export function LockedBoard() {
             </button>
           ))}
         </div>
+        <div className="seg" role="group" aria-label="圖表來源">
+          <button type="button" className={engine === "site" ? "on" : ""} onClick={() => setEngine("site")}>站內 K 線</button>
+          <button type="button" className={engine === "tv" ? "on" : ""} onClick={() => setEngine("tv")}>TradingView</button>
+        </div>
         <span className="note">{pair.replace(/USDT$/, "")} 本頁 {coinN} 筆訊號</span>
       </div>
       <SignalChart
@@ -177,12 +172,27 @@ export function LockedBoard() {
         interval={interval}
         markers={markers}
         focusMs={focusMs}
+        engine={engine}
+        onEngine={setEngine}
         onPick={(ms) => {
           setFocusMs(ms);
           const idx = filtered.findIndex((s) => s.pair === pair && s.open_ms === ms);
           if (idx >= 0) setPage(Math.floor(idx / pageSize));
         }}
       />
+    </div>
+
+
+      <div className="cards">
+        <div className="card"><b>{data.n}</b><span>鎖定訊號</span><em>{data.symbols} 檔現貨</em></div>
+        <div className="card"><b>{data.per_day}</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
+        <div className="card"><b>{num(data.score_median, 2)}</b><span>Score 中位</span><em>均值 {num(data.score_mean, 2)}</em></div>
+        <div className="card"><b>{data.red_flag_n}</b><span>任一時窗 ≤ −10%</span><em>Score ≥ +5 有 {data.score_ge_5} 筆</em></div>
+      </div>
+      <p className="note">
+        視窗 {data.first_tp} → {data.last_tp}（台北）。Score &lt; 0 有 {data.score_lt_0} 筆。
+        GTC 9/30 15:31、SAGA 9/10 21:39、SAND 10/02 14:51 都在表內。
+      </p>
 
       <h2>訊號明細</h2>
       <div className="filters">
