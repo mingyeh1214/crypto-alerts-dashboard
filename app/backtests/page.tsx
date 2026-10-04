@@ -31,6 +31,10 @@ export default function BacktestsPage() {
   return (
     <main>
       <h1>回測模擬</h1>
+      <div className="banner">
+        目前鎖定規則的 432 筆（ATR 0.8–2.5、funding ≥ −0.10%、同幣 24 小時）在
+        {" "}<a href="/signals">訊號頁</a>，含各幣 K 線。下面這頁仍是較早的 quiet_surge 15 分模擬，用來對照。
+      </div>
       <p className="lead">
         模擬起點是台北 2026-09-01，收到當時最新的 15 分 K（約 2026-10-03）。
         60 分冷卻仍會計入 9 月以前的觸發，但表上只列出 9 月起的訊號。

@@ -3,56 +3,44 @@ import Link from "next/link";
 export default function HomePage() {
   return (
     <main>
-      <h1>全市場即時監控</h1>
+      <h1>全市場現貨監控</h1>
       <p className="lead">
-        正式規則是 <code>quiet_surge_early</code>：每根現貨 1 分 K 收盤就檢查，抓長期相對安靜後的突然放量，
-        並用 U 本位永續的持倉張數確認。只盯「有現貨、也有永續、OI 能即時更新」的幣。
-        進場後先用 +5 分、再 +15 分驗證。觸發與追蹤寫入 Supabase，並送到 Telegram。
+        目前鎖定的是 <code>P12_z278</code>：幣安現貨 USDT，1 分 K 收盤看放量 z ≥ 2.78、轉強、合約 OI，
+        再加上 15 分 ATR 0.8%～2.5%，以及最近一筆資金費率不低於 −0.10%。同一幣 24 小時只發一次。
       </p>
-      <div className="cards">
-        <div className="card"><b>360</b><span>啟用中的 quiet_surge_early</span><em>現貨＋永續</em></div>
-        <div className="card"><b>30 日</b><span>放量回看（43200 根 1 分）</span><em>log 成交額 z，可調</em></div>
-        <div className="card"><b>360</b><span>OI 已就緒</span><em>合約張數</em></div>
-        <div className="card"><b>60 分</b><span>同幣進場冷卻</span><em>追蹤中不再發新進場</em></div>
+      <div className="banner">
+        網站上的規則與訊號表已對齊這套鎖定口徑。Telegram 與 Railway worker 尚未切換，即時頁看到的仍是舊的 quiet_surge_early。
       </div>
-      <p className="note">360 與 60 分是目前規則設定。即時就緒數、心跳與警報以 <Link href="/live">即時狀態</Link> 為準。</p>
+      <div className="cards">
+        <div className="card"><b>432</b><span>9 月至今鎖定訊號</span><em>245 檔現貨</em></div>
+        <div className="card"><b>14.8</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
+        <div className="card"><b>0.8–2.5</b><span>15 分 ATR%</span><em>含上下限</em></div>
+        <div className="card"><b>−0.10%</b><span>資金費率地板</span><em>更低就跳過</em></div>
+      </div>
 
       <div className="grid2">
         <section>
-          <h2>現在在盯什麼</h2>
+          <h2>進場要過什麼</h2>
           <ul className="clean">
-            <li>宇宙：幣安現貨 USDT，且有對應 U 本位永續。槓桿代幣與穩定幣排除。約 360 檔，各一條規則。</li>
-            <li>進場在 <strong>1 分 K 收盤</strong>。這一分鐘成交額的 log，對過去 30 日已完成 1 分 log 成交額的 z ≥ 2.5（回看根數可調，預設 43200），而且相對前一根 15 分收盤已漲 ≥ 1%。</li>
-            <li>安靜仍看已完成的 15 分：前 1 小時、前 4 小時中位都不能已經很熱。OI 確認後才發 Telegram。</li>
-            <li>參考驗證幣仍包含 SAGA、GTC、SAND、QNT（以及回測裡的 MANA），但線上不再只盯這四檔。</li>
+            <li>現貨 1 分成交額的 log z ≥ 2.78（回看最多 30 日），而且相對前一根 15 分收盤已漲 ≥ 1%、這一分鐘不收跌。</li>
+            <li>U 本位 5 分 OI：近 1 小時增倉，且 OI 變化 z ≥ 1.2。前 24 小時漲幅 ≤ +12%。</li>
+            <li>形成中的 15 分 ATR% 落在 0.8 到 2.5。最後一筆 funding ≥ −0.10%。</li>
+            <li>同一幣 24 小時內不重複。參考單 GTC 9/30、SAGA 9/10、SAND 10/02 都還在。</li>
           </ul>
           <p><Link href="/strategy">看完整規則 →</Link></p>
         </section>
         <section>
-          <h2>進場後追蹤</h2>
+          <h2>怎麼看一筆好不好</h2>
           <ul className="clean">
-            <li>每筆進場另開一筆 <code>alert_watches</code>。同一幣＋市場同時只允許一筆 <code>active</code>。</li>
-            <li>+5 分：之後 5 根 1 分。價在警報價之上、每分鐘量還在（≥ 進場那一分的 35%）算有效；量縮但沒跌破算觀察；跌破則失效。</li>
-            <li>+15 分再驗證一次。之後改看 15 分收盤，跌破警報價只發一次失效並結束。</li>
-            <li>+4 小時、+1 日各一則摘要（報酬、量相對 30 日基準、OI 增減）。+1 日送完結束，之後可再進場（仍受 60 分冷卻）。</li>
+            <li>看進場後 1 小時、4 小時、1 日的最大漲與最大跌，不看收盤。</li>
+            <li>Score 把三段的「上檔＋下檔」做成 0.5／0.3／0.2 加權。中位約 +0.35，≥ +5 有 98 筆。</li>
+            <li>任一時窗最大跌 ≤ −10% 有 53 筆，表上標成紅旗。</li>
+            <li>K 線在訊號頁，箭頭標在發送那一根。</li>
           </ul>
+          <p><Link href="/signals">打開訊號與 K 線 →</Link></p>
         </section>
       </div>
-
-      <h2>回測快照（不是即時單）</h2>
-      <p className="lead">
-        模擬從台北 2026-09-01 起到資料當時最新一根 15 分 K。全市場主表 657 筆、356 檔歷史夠長。
-        名義 $100、不含手續費。警報後最大漲／跌是路徑極值，不是出場價。
-      </p>
-      <div className="cards">
-        <div className="card"><b>657</b><span>全市場訊號</span></div>
-        <div className="card"><b>−$0.69</b><span>+4 小時中位（$100）</span></div>
-        <div className="card"><b>−$1.26</b><span>+1 日中位（$100）</span></div>
-        <div className="card"><b>+19%</b><span>警報後最大漲幅中位</span></div>
-      </div>
-      <p><Link href="/signals">9 月至今的訊號紀錄（持續更新） →</Link></p>
-      <p><Link href="/backtests">回測頁與原始報告 →</Link></p>
-      <p className="note">這不是投資建議。中位報酬偏弱，少數路徑漲幅很大；存活偏差：已下架的幣不在樣本裡。</p>
+      <p className="note">不是投資建議。這是回測清單，還沒接到下單。</p>
     </main>
   );
 }

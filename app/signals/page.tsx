@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { LockedBoard } from "./LockedBoard";
 import { SignalLog } from "./SignalLog";
 
 export const metadata: Metadata = { title: "訊號紀錄 · 盯盤哨兵" };
@@ -6,13 +7,19 @@ export const metadata: Metadata = { title: "訊號紀錄 · 盯盤哨兵" };
 export default function SignalsPage() {
   return (
     <main>
-      <h1>訊號／紀錄</h1>
+      <h1>鎖定訊號</h1>
       <p className="lead">
-        安靜後放量初期（quiet_surge_early，含合約 OI）從台北 2026-09-01 到現在的每一筆。
-        9 月到回測截止日是 15 分規則的全市場模擬。線上從這次改版起改為 1 分收盤進場，
-        +5 分先驗證、+15 分再驗證；新進場仍會每分鐘併進來。
+        P12_z278 ＋ 15 分 ATR 0.8%～2.5% ＋ 資金費率不低於 −0.10% ＋ 同幣冷卻 24 小時。
+        只含幣安現貨 USDT。下面每一筆都能在 K 線上看到發送時間。
       </p>
-      <SignalLog />
+      <LockedBoard />
+      <details className="fold">
+        <summary>舊版 quiet_surge_early 紀錄（線上 worker 仍是這套）</summary>
+        <p className="lead">
+          這段是改鎖定規則之前的 15 分模擬與即時進場，用來對照，不是現在這張 432 筆的口徑。
+        </p>
+        <SignalLog />
+      </details>
     </main>
   );
 }

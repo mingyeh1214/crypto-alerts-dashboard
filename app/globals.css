@@ -156,3 +156,6 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
   .shell { padding-left: 12px; padding-right: 12px; }
   h1 { font-size: 1.4rem; }
 }
+
+.chart-box { height: 440px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #131922; }
+@media (max-width: 720px) { .chart-box { height: 320px; } }

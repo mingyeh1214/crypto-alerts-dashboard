@@ -18,7 +18,7 @@ export function Nav() {
     <header className="top">
       <div className="brand">
         <strong>盯盤哨兵</strong>
-        <span>安靜後放量初期 ＋ 合約 OI</span>
+        <span>P12_z278 · 現貨 USDT</span>
       </div>
       <nav>
         {LINKS.map((l) => (

@@ -1,6 +1,6 @@
 # 盯盤哨兵
 
-幣安現貨＋U 本位永續的監控說明站：策略、回測、即時狀態。
+幣安現貨 USDT 監控說明站。鎖定規則是 P12_z278（ATR 0.8–2.5%、funding ≥ −0.10%、同幣冷卻 24 小時）。策略、訊號 K 線、舊回測與即時狀態。
 
 - 即時 worker 在另一個 repo（`crypto-alerts-worker`），這個站不改它。
 - 即時頁用 Supabase **anon** key 呼叫 `dashboard_live()`。資料表 RLS 仍關閉匿名讀取。
