@@ -277,7 +277,7 @@ export function LockedBoard() {
         <div className="card"><b>{data.red_flag_n}</b><span>任一時窗 ≤ −10%</span><em>其中 ≤ −15% 有 {data.red_flag_15_n} 筆</em></div>
       </div>
       <p className="note">
-        視窗 {data.first_tp} → {data.last_tp}（台北）。Score 是 1–10 的整數，10 最好：四個時窗的優勢加權後，在這 432 筆裡切十分位，再套紅旗。
+        視窗 {data.first_tp} → {data.last_tp}（台北）。Score 是 1–10 的整數，10 最好：四個時窗的優勢加權後，在這 {data.n} 筆裡切十分位，再套紅旗。00:43 之後的 1 日窗多半還沒走完，分數還會變。
         GTC 9/30 15:31、SAGA 9/10 21:39、SAND 10/02 14:51 都在表內。
       </p>
 
