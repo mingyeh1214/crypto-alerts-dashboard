@@ -14,7 +14,7 @@ drop function if exists public.dashboard_param_backtest(
 );
 
 create or replace function public.dashboard_param_backtest(
-  volume_z double precision default 2.5,
+  volume_z double precision default 2.78,
   quiet_mult double precision default 3,
   min_bar_return double precision default 0.01,
   max_prior_24h double precision default 0.08,
@@ -39,7 +39,7 @@ set statement_timeout = '90s'
 as $$
 #variable_conflict use_column
 declare
-  v_vz double precision := least(12, greatest(0, coalesce(volume_z, 2.5)));
+  v_vz double precision := least(12, greatest(0, coalesce(volume_z, 2.78)));
   v_quiet double precision := least(50, greatest(0.1, coalesce(quiet_mult, 3)));
   v_min_ret double precision := least(1, greatest(-0.5, coalesce(min_bar_return, 0.01)));
   v_max_24h double precision := least(5, greatest(-0.5, coalesce(max_prior_24h, 0.08)));
