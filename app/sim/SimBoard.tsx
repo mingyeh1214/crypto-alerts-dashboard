@@ -6,13 +6,30 @@ type Trade = {
   symbol: string;
   signal_tp: string;
   exit_tp: string;
+  side?: string;
   entry: number;
   exit: number;
+  qty?: number;
   notional: number;
+  leverage?: number;
+  margin?: number;
+  equity_before?: number;
+  free_margin_before?: number;
+  free_margin_after_open?: number;
+  margin_used_open?: number;
+  entry_fee?: number;
+  exit_fee?: number;
+  fee_total?: number;
+  price_pnl?: number;
+  unrealized_pnl?: number;
+  realized_pnl?: number;
   pnl: number;
+  pnl_pct_margin?: number | null;
+  pnl_pct_notional?: number | null;
+  balance_after?: number | null;
+  equity_after?: number | null;
   reason: string;
   hold_min: number;
-  equity_after?: number;
 };
 type Book = {
   id: string;
@@ -40,9 +57,29 @@ type OldTrade = {
   signal_tp: string;
   entry_tp: string;
   exit_tp: string;
+  side?: string;
   entry: number;
+  exit?: number;
   stop: number;
+  qty?: number;
+  notional?: number;
+  leverage?: number;
+  margin?: number;
+  equity_before?: number;
+  free_margin_before?: number;
+  free_margin_after_open?: number;
+  margin_used_open?: number;
+  entry_fee?: number;
+  exit_fee?: number;
+  fee_total?: number;
+  price_pnl?: number;
+  unrealized_pnl?: number;
+  realized_pnl?: number;
   pnl: number;
+  pnl_pct_margin?: number | null;
+  pnl_pct_notional?: number | null;
+  balance_after?: number | null;
+  equity_after?: number | null;
   r: number | null;
   reasons: string;
   fills: OldFill[];
@@ -73,12 +110,20 @@ function money(n: number) {
   const sign = n > 0 ? "+" : "";
   return (n > 0 ? sign : "") + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function num(n: number | null | undefined, dig = 2) {
+  if (n == null || Number.isNaN(n)) return "—";
+  return n.toLocaleString("en-US", { minimumFractionDigits: dig, maximumFractionDigits: dig });
+}
 function px(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
 }
 function pct(n: number | null) {
   if (n == null) return "—";
   return `${(n * 100).toFixed(1)}%`;
+}
+function pnlCls(n: number | null | undefined) {
+  if (n == null || n === 0) return "";
+  return n > 0 ? "up" : "dn";
 }
 
 function Curve({ pts, start, color }: { pts: { equity: number }[]; start: number; color: string }) {
@@ -103,7 +148,7 @@ function Curve({ pts, start, color }: { pts: { equity: number }[]; start: number
 }
 
 function BookView({ book, color }: { book: Book; color: string }) {
-  const pnlCls = book.pnl >= 0 ? "up" : "dn";
+  const pnlC = book.pnl >= 0 ? "up" : "dn";
   const skips = Object.entries(book.skipped).sort((a, b) => b[1] - a[1]);
   return (
     <section>
@@ -111,7 +156,7 @@ function BookView({ book, color }: { book: Book; color: string }) {
       <p className="note">{book.headline}</p>
       <div className="cards">
         <div className="card"><b>1000</b><span>起始 USDT</span><em>2026-09 鎖定訊號</em></div>
-        <div className="card"><b className={pnlCls}>{book.sept_end_equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b><span>9 月底權益</span><em>{money(book.pnl)} USDT</em></div>
+        <div className="card"><b className={pnlC}>{book.sept_end_equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b><span>9 月底權益</span><em>{money(book.pnl)} USDT</em></div>
         <div className="card"><b>{book.taken}</b><span>有做的單</span><em>可做 {book.eligible} / 訊號 {book.signals}</em></div>
         <div className="card"><b>{pct(book.win_rate)}</b><span>勝率</span><em>已實現回撤 {pct(book.maxdd_realized)}</em></div>
         <div className="card"><b>{book.min_equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b><span>期間最低權益</span><em>平倉時計算</em></div>
@@ -137,18 +182,36 @@ function BookView({ book, color }: { book: Book; color: string }) {
           </div>
         </>
       )}
-      <h3>成交明細</h3>
+      <h3>成交明細（期貨帳戶過程）</h3>
+      <p className="note">已平倉列的未實現損益為 0。價格損益＝倉位 ×（出場−進場）；已實現＝扣手續費後淨額。總權益／餘額在平倉結算後更新。</p>
       <div className="scroll">
         <table>
           <thead>
             <tr>
               <th className="left">訊號（台北）</th>
               <th className="left">幣</th>
+              <th>方向</th>
               <th>進場價</th>
               <th>出場價</th>
               <th className="left">出場</th>
+              <th>倉位</th>
               <th>名義</th>
-              <th>損益</th>
+              <th>槓桿</th>
+              <th>保證金</th>
+              <th>進場前權益</th>
+              <th>開倉前可用</th>
+              <th>開倉後可用</th>
+              <th>開倉後占用</th>
+              <th>開倉費</th>
+              <th>平倉費</th>
+              <th>手續費合計</th>
+              <th>價格損益</th>
+              <th>未實現</th>
+              <th>已實現</th>
+              <th>保證金報酬%</th>
+              <th>名義報酬%</th>
+              <th>平倉後權益</th>
+              <th>平倉後餘額</th>
             </tr>
           </thead>
           <tbody>
@@ -156,11 +219,28 @@ function BookView({ book, color }: { book: Book; color: string }) {
               <tr key={t.symbol + t.signal_tp}>
                 <td className="left">{t.signal_tp}</td>
                 <td className="left">{t.symbol}</td>
+                <td>{t.side === "long" ? "多" : t.side ?? "多"}</td>
                 <td>{px(t.entry)}</td>
                 <td>{px(t.exit)}</td>
                 <td className="left">{t.exit_tp} · {t.reason} · {t.hold_min} 分</td>
-                <td>{t.notional.toLocaleString("en-US", { maximumFractionDigits: 2 })}</td>
-                <td className={t.pnl >= 0 ? "up" : "dn"}>{money(t.pnl)}</td>
+                <td>{num(t.qty, 4)}</td>
+                <td>{num(t.notional)}</td>
+                <td>{t.leverage != null ? `${num(t.leverage, 1)}x` : "—"}</td>
+                <td>{num(t.margin)}</td>
+                <td>{num(t.equity_before)}</td>
+                <td>{num(t.free_margin_before)}</td>
+                <td>{num(t.free_margin_after_open)}</td>
+                <td>{num(t.margin_used_open)}</td>
+                <td>{num(t.entry_fee, 4)}</td>
+                <td>{num(t.exit_fee, 4)}</td>
+                <td>{num(t.fee_total, 4)}</td>
+                <td className={pnlCls(t.price_pnl)}>{t.price_pnl == null ? "—" : money(t.price_pnl)}</td>
+                <td>{num(t.unrealized_pnl)}</td>
+                <td className={pnlCls(t.realized_pnl ?? t.pnl)}>{money(t.realized_pnl ?? t.pnl)}</td>
+                <td className={pnlCls(t.pnl_pct_margin)}>{t.pnl_pct_margin == null ? "—" : `${t.pnl_pct_margin.toFixed(2)}%`}</td>
+                <td className={pnlCls(t.pnl_pct_notional)}>{t.pnl_pct_notional == null ? "—" : `${t.pnl_pct_notional.toFixed(2)}%`}</td>
+                <td>{num(t.equity_after)}</td>
+                <td>{num(t.balance_after ?? t.equity_after)}</td>
               </tr>
             ))}
           </tbody>
@@ -230,18 +310,38 @@ export function SimBoard() {
             </tbody>
           </table>
         </div>
-        <h3>成交明細</h3>
+        <h3>成交明細（期貨帳戶過程）</h3>
+        <p className="note">已平倉列的未實現損益為 0。分批出場時出場價取最後一筆成交價；已實現含各段手續費。</p>
         <div className="scroll">
           <table>
             <thead>
               <tr>
                 <th className="left">進場（台北）</th>
                 <th className="left">幣</th>
+                <th>方向</th>
                 <th>進場價</th>
                 <th>止損</th>
+                <th>出場價</th>
                 <th className="left">出場</th>
-                <th>損益 USDT</th>
+                <th>倉位</th>
+                <th>名義</th>
+                <th>槓桿</th>
+                <th>保證金</th>
+                <th>進場前權益</th>
+                <th>開倉前可用</th>
+                <th>開倉後可用</th>
+                <th>開倉後占用</th>
+                <th>開倉費</th>
+                <th>平倉費</th>
+                <th>手續費合計</th>
+                <th>價格損益</th>
+                <th>未實現</th>
+                <th>已實現</th>
                 <th>R</th>
+                <th>保證金報酬%</th>
+                <th>名義報酬%</th>
+                <th>平倉後權益</th>
+                <th>平倉後餘額</th>
               </tr>
             </thead>
             <tbody>
@@ -249,11 +349,30 @@ export function SimBoard() {
                 <tr key={t.symbol + t.entry_tp}>
                   <td className="left">{t.entry_tp}</td>
                   <td className="left">{t.symbol}</td>
+                  <td>{t.side === "long" ? "多" : t.side ?? "多"}</td>
                   <td>{px(t.entry)}</td>
                   <td>{px(t.stop)}</td>
+                  <td>{t.exit != null ? px(t.exit) : "—"}</td>
                   <td className="left">{t.exit_tp} · {t.reasons}</td>
-                  <td className={t.pnl >= 0 ? "up" : "dn"}>{money(t.pnl)}</td>
-                  <td className={t.pnl >= 0 ? "up" : "dn"}>{t.r}</td>
+                  <td>{num(t.qty, 4)}</td>
+                  <td>{num(t.notional)}</td>
+                  <td>{t.leverage != null ? `${num(t.leverage, 1)}x` : "—"}</td>
+                  <td>{num(t.margin)}</td>
+                  <td>{num(t.equity_before)}</td>
+                  <td>{num(t.free_margin_before)}</td>
+                  <td>{num(t.free_margin_after_open)}</td>
+                  <td>{num(t.margin_used_open)}</td>
+                  <td>{num(t.entry_fee, 4)}</td>
+                  <td>{num(t.exit_fee, 4)}</td>
+                  <td>{num(t.fee_total, 4)}</td>
+                  <td className={pnlCls(t.price_pnl)}>{t.price_pnl == null ? "—" : money(t.price_pnl)}</td>
+                  <td>{num(t.unrealized_pnl)}</td>
+                  <td className={pnlCls(t.realized_pnl ?? t.pnl)}>{money(t.realized_pnl ?? t.pnl)}</td>
+                  <td className={pnlCls(t.pnl)}>{t.r}</td>
+                  <td className={pnlCls(t.pnl_pct_margin)}>{t.pnl_pct_margin == null ? "—" : `${t.pnl_pct_margin.toFixed(2)}%`}</td>
+                  <td className={pnlCls(t.pnl_pct_notional)}>{t.pnl_pct_notional == null ? "—" : `${t.pnl_pct_notional.toFixed(2)}%`}</td>
+                  <td>{num(t.equity_after)}</td>
+                  <td>{num(t.balance_after ?? t.equity_after)}</td>
                 </tr>
               ))}
             </tbody>
