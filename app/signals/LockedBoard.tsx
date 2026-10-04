@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SignalChart, type ChartMarker } from "@/components/SignalChart";
-import { winCells, type WinMap } from "@/components/ExtremeCell";
+import { winCells, type WinCell, type WinMap } from "@/components/ExtremeCell";
+import { taipei } from "@/lib/format";
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
 
 type Signal = {
   symbol: string;
@@ -27,7 +29,30 @@ type Signal = {
   d1_dn: number | null;
   red: number;
   win?: WinMap | null;
+  live?: boolean;
 };
+
+type SentRow = {
+  id: number;
+  symbol: string;
+  triggered_at: string;
+  open_ms: number | null;
+  entry: number | null;
+  volume: number | null;
+  quote_usdt: number | null;
+  z: number | null;
+  turn: number | null;
+  atr15_pct: number | null;
+  funding: number | null;
+};
+
+type Feed = {
+  generated_at: string;
+  sent: SentRow[];
+  unsent: { id: number; symbol: string; open_ms: number | null }[];
+};
+
+type Candle = { time: number; high: number; low: number };
 
 type Payload = {
   n: number;
@@ -160,11 +185,135 @@ function price(n: number | null) {
 }
 
 
+
+const POLL_MS = 5_000;
+
+function tpFromMs(ms: number): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(ms));
+  const g = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return `${g("year")}-${g("month")}-${g("day")} ${g("hour")}:${g("minute")}`;
+}
+
+function sentToSignal(e: SentRow): Signal | null {
+  if (e.open_ms == null) return null;
+  const pair = e.symbol.toUpperCase();
+  const symbol = pair.endsWith("USDT") ? pair.slice(0, -4) : pair;
+  return {
+    symbol,
+    pair,
+    tp: tpFromMs(e.open_ms),
+    open_ms: e.open_ms,
+    entry: e.entry,
+    score: null,
+    z: e.z == null ? null : Math.round(e.z * 1000) / 1000,
+    turn_pct: e.turn == null ? null : e.turn * 100,
+    atr15_pct: e.atr15_pct,
+    funding_pct: e.funding == null ? null : e.funding * 100,
+    volume: e.volume,
+    quote_usdt: e.quote_usdt,
+    h1_up: null,
+    h1_dn: null,
+    h4_up: null,
+    h4_dn: null,
+    d1_up: null,
+    d1_dn: null,
+    red: 0,
+    win: null,
+    live: true,
+  };
+}
+
+function dropKey(symbol: string, openMs: number | null) {
+  if (openMs == null) return "";
+  const pair = symbol.toUpperCase();
+  return `${pair}|${openMs}`;
+}
+
+function mergeSignals(hist: Signal[], feed: Feed | null): Signal[] {
+  const unsent = new Set((feed?.unsent ?? []).map((u) => dropKey(u.symbol, u.open_ms)));
+  const rows = hist.filter((s) => !unsent.has(`${s.pair}|${s.open_ms}`));
+  const have = new Set(rows.map((s) => `${s.pair}|${s.open_ms}`));
+  for (const e of feed?.sent ?? []) {
+    const sig = sentToSignal(e);
+    if (!sig) continue;
+    const key = `${sig.pair}|${sig.open_ms}`;
+    if (have.has(key)) continue;
+    have.add(key);
+    rows.push(sig);
+  }
+  return rows;
+}
+
+function extreme(slice: Candle[], entry: number, side: "up" | "dn"): { px: number; t: string; p: number } {
+  let i = 0;
+  slice.forEach((c, idx) => {
+    if (side === "up" ? c.high > slice[i].high : c.low < slice[i].low) i = idx;
+  });
+  const px = side === "up" ? slice[i].high : slice[i].low;
+  return { px, t: tpFromMs(slice[i].time * 1000), p: px / entry - 1 };
+}
+
+function windowCell(candles: Candle[], entry: number, openMs: number, bars: number): WinCell | null {
+  const after = candles.filter((c) => c.time * 1000 > openMs);
+  const slice = after.slice(0, bars);
+  if (!slice.length || entry <= 0) return null;
+  const up = extreme(slice, entry, "up");
+  const dn = extreme(slice, entry, "dn");
+  return {
+    up_px: up.px,
+    up_t: up.t,
+    up: up.p,
+    dn_px: dn.px,
+    dn_t: dn.t,
+    dn: dn.p,
+    n: slice.length,
+    full: slice.length === bars,
+  };
+}
+
+function buildWin(candles: Candle[], entry: number, openMs: number): WinMap | null {
+  const m15 = windowCell(candles, entry, openMs, 15);
+  const h1 = windowCell(candles, entry, openMs, 60);
+  const h4 = windowCell(candles, entry, openMs, 240);
+  const d1 = windowCell(candles, entry, openMs, 1440);
+  if (!m15 && !h1 && !h4 && !d1) return null;
+  return { m15, h1, h4, d1 };
+}
+
+function applyWin(s: Signal, win: WinMap | null | undefined): Signal {
+  if (!win) return s;
+  const dns = [win.m15, win.h1, win.h4, win.d1].map((c) => c?.dn).filter((n): n is number => n != null);
+  const worst = dns.length ? Math.min(...dns) : 0;
+  return {
+    ...s,
+    win,
+    h1_up: win.h1 ? win.h1.up * 100 : s.h1_up,
+    h1_dn: win.h1 ? win.h1.dn * 100 : s.h1_dn,
+    h4_up: win.h4 ? win.h4.up * 100 : s.h4_up,
+    h4_dn: win.h4 ? win.h4.dn * 100 : s.h4_dn,
+    d1_up: win.d1 ? win.d1.up * 100 : s.d1_up,
+    d1_dn: win.d1 ? win.d1.dn * 100 : s.d1_dn,
+    red: worst <= -0.1 ? 1 : s.red,
+  };
+}
+
 const TARGETS = new Set(["GTC|2026-09-30 15:31", "SAGA|2026-09-10 21:39", "SAND|2026-10-02 14:51"]);
 
 export function LockedBoard() {
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState("");
+  const [feed, setFeed] = useState<Feed | null>(null);
+  const [feedErr, setFeedErr] = useState("");
+  const [feedAt, setFeedAt] = useState("");
+  const [extraWins, setExtraWins] = useState<Record<string, WinMap>>({});
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "time", dir: "desc" });
   const [redOnly, setRedOnly] = useState(false);
@@ -183,19 +332,101 @@ export function LockedBoard() {
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : "讀取失敗"));
   }, []);
 
+  useEffect(() => {
+    let cancel = false;
+    async function load() {
+      try {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/dashboard_p12_feed`, {
+          method: "POST",
+          headers: {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+          },
+          body: "{}",
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const json = (await res.json()) as Feed;
+        if (cancel) return;
+        setFeed(json);
+        setFeedAt(new Date().toISOString());
+        setFeedErr("");
+      } catch (e) {
+        if (!cancel) setFeedErr(e instanceof Error ? e.message : "即時讀取失敗");
+      }
+    }
+    load();
+    const id = window.setInterval(load, POLL_MS);
+    const onVis = () => {
+      if (document.visibilityState === "visible") load();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      cancel = true;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  const merged = useMemo(
+    () => mergeSignals(data?.signals ?? [], feed).map((s) => applyWin(s, s.win ?? extraWins[`${s.pair}|${s.open_ms}`])),
+    [data, feed, extraWins],
+  );
+
+  const liveKey = useMemo(
+    () =>
+      merged
+        .filter((s) => s.live && s.entry != null && !s.win?.d1?.full)
+        .map((s) => `${s.pair}|${s.open_ms}|${s.entry}`)
+        .join(","),
+    [merged],
+  );
+
+  useEffect(() => {
+    if (!liveKey) return;
+    const need = liveKey.split(",").map((part) => {
+      const [pair, openRaw, entryRaw] = part.split("|");
+      return { pair, open_ms: Number(openRaw), entry: Number(entryRaw) };
+    });
+    let cancel = false;
+    async function fill() {
+      for (const s of need) {
+        if (cancel || !s.pair || !Number.isFinite(s.entry)) return;
+        try {
+          const res = await fetch(`/api/klines?symbol=${encodeURIComponent(s.pair)}&interval=1m&recent=1000`, { cache: "no-store" });
+          if (!res.ok) continue;
+          const json = (await res.json()) as { candles?: Candle[] };
+          const win = buildWin(json.candles ?? [], s.entry, s.open_ms);
+          if (cancel || !win) continue;
+          setExtraWins((prev) => ({ ...prev, [`${s.pair}|${s.open_ms}`]: win }));
+        } catch {
+          /* keep the row; windows fill on the next pass */
+        }
+      }
+    }
+    fill();
+    const id = window.setInterval(fill, 60_000);
+    return () => {
+      cancel = true;
+      window.clearInterval(id);
+    };
+  }, [liveKey]);
+
   const coins = useMemo(() => {
     const map = new Map<string, { pair: string; n: number }>();
-    for (const s of data?.signals ?? []) {
+    for (const s of merged) {
       const cur = map.get(s.symbol) ?? { pair: s.pair, n: 0 };
       cur.n += 1;
       map.set(s.symbol, cur);
     }
     return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "en", { sensitivity: "base" }));
-  }, [data]);
+  }, [merged]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toUpperCase();
-    let rows = data?.signals ?? [];
+    let rows = merged;
     if (query) rows = rows.filter((r) => r.symbol.includes(query) || r.pair.includes(query));
     if (redOnly) rows = rows.filter((r) => r.red === 1);
     const copy = [...rows];
@@ -205,7 +436,7 @@ export function LockedBoard() {
       return b.open_ms - a.open_ms || a.symbol.localeCompare(b.symbol, "en");
     });
     return copy;
-  }, [data, q, redOnly, sort]);
+  }, [merged, q, redOnly, sort]);
 
   useEffect(() => setPage(0), [q, redOnly, sort.key, sort.dir]);
 
@@ -229,10 +460,10 @@ export function LockedBoard() {
   }
 
   const markers: ChartMarker[] = useMemo(() => {
-    return (data?.signals ?? [])
+    return merged
       .filter((s) => s.pair === pair)
       .map((s) => ({ open_ms: s.open_ms, label: s.tp.slice(5, 16) }));
-  }, [data, pair]);
+  }, [merged, pair]);
 
   const pageSize = 40;
   const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -289,15 +520,18 @@ export function LockedBoard() {
 
 
       <div className="cards">
-        <div className="card"><b>{data.n}</b><span>鎖定訊號</span><em>{data.symbols} 檔現貨</em></div>
+        <div className="card"><b>{merged.length}</b><span>鎖定訊號</span><em>{data.symbols} 檔現貨</em></div>
         <div className="card"><b>{data.per_day}</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
         <div className="card"><b>{num(data.score_median, 0)}</b><span>Score 中位（1–10）</span><em>均值 {num(data.score_mean, 2)}</em></div>
         <div className="card"><b>{data.score_high_n}</b><span>Score 8–10</span><em>1–3 分有 {data.score_low_n} 筆</em></div>
         <div className="card"><b>{data.red_flag_n}</b><span>任一時窗 ≤ −10%</span><em>其中 ≤ −15% 有 {data.red_flag_15_n} 筆</em></div>
       </div>
       <p className="note">
-        視窗 {data.first_tp} → {data.last_tp}（台北）。Score 是 1–10 的整數，10 最好：四個時窗的優勢加權後，在這 {data.n} 筆裡切十分位，再套紅旗。00:43 之後的 1 日窗多半還沒走完，分數還會變。
-        GTC 9/30 15:31、SAGA 9/10 21:39、SAND 10/02 14:51 都在表內。
+        視窗 {data.first_tp} → {merged.length ? merged.reduce((a, s) => (s.tp > a ? s.tp : a), merged[0].tp) : data.last_tp}（台北）。
+        明細 {merged.length} 筆：歷史回測保留，未送 Telegram 的補庫 {feed ? feed.unsent.length : "…"} 筆已拿掉。
+        已送的即時訊號每 5 秒併入這張表（與即時頁同一張 alerts），Score 仍是原本回測分位，新進場先不給分。
+        {feedAt ? `上次抓取 ${taipei(feedAt)}` : "正在接即時訊號…"}
+        {feedErr ? `（即時更新失敗：${feedErr}）` : ""}
       </p>
 
       <h2>訊號明細</h2>
@@ -345,6 +579,7 @@ export function LockedBoard() {
                     <button type="button" className="linkish" onClick={() => openSignal(s)}>
                       {s.symbol}
                     </button>
+                    {s.live ? <span className="sym"> 已送</span> : null}
                     {s.red ? <span className="sym"> 紅旗</span> : null}
                   </td>
                   <td>{price(s.entry)}</td>
