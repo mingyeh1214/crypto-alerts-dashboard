@@ -305,6 +305,7 @@ type Disc = {
   maxdd_realized: number;
   min_equity: number;
   styles: Record<string, number>;
+  card_em?: string;
   curve: { tp: string; equity: number }[];
   trades: DiscTrade[];
   skips: DiscSkip[];
@@ -322,7 +323,7 @@ function DiscView({ book }: { book: Disc }) {
         <div className="card"><b>1000</b><span>起始 USDT</span><em>只看 2026-09 鎖定訊號</em></div>
         <div className="card"><b className={pnlC}>{book.sept_end_equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b><span>9 月底權益</span><em>{money(book.sept_end_pnl)} USDT</em></div>
         <div className="card"><b>{book.taken}</b><span>有做的單</span><em>跳過 {book.skipped_n} / 訊號 {book.signals}</em></div>
-        <div className="card"><b>{pct(book.win_rate)}</b><span>勝率</span><em>立即 {book.styles.A ?? 0} · 回踩 {book.styles.B ?? 0}</em></div>
+        <div className="card"><b>{pct(book.win_rate)}</b><span>勝率</span><em>{book.card_em ?? `立即 ${book.styles.A ?? 0} · 回踩 ${book.styles.B ?? 0}`}</em></div>
         <div className="card"><b>{pct(book.maxdd)}</b><span>最大回撤</span><em>已實現 {pct(book.maxdd_realized)} · 最低 {book.min_equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</em></div>
       </div>
       <Curve pts={book.curve} start={1000} color="#c4b5fd" />
@@ -385,7 +386,7 @@ function DiscView({ book }: { book: Disc }) {
                 <td className="left">{t.signal_tp}</td>
                 <td className="left">{t.symbol}</td>
                 <td>{t.side === "long" ? "多" : t.side ?? "多"}</td>
-                <td>{t.entry_style === "A" ? "立即" : "回踩"} · {t.entry_tp.slice(11)}</td>
+                <td>{t.entry_style === "A" ? "立即" : t.entry_style === "B" ? "回踩" : "當下"} · {t.entry_tp.slice(11)}</td>
                 <td>{px(t.entry)}</td>
                 <td>{px(t.stop)}</td>
                 <td>{px(t.exit)}</td>
@@ -415,8 +416,8 @@ function DiscView({ book }: { book: Disc }) {
           </tbody>
         </table>
       </div>
-      <h3>沒做的單（每一筆的理由）</h3>
-      <div className="scroll">
+      {book.skips.length > 0 && <h3>沒做的單（每一筆的理由）</h3>}
+      {book.skips.length > 0 && <div className="scroll">
         <table>
           <thead>
             <tr>
@@ -437,7 +438,7 @@ function DiscView({ book }: { book: Disc }) {
             ))}
           </tbody>
         </table>
-      </div>
+      </div>}
     </section>
   );
 }
@@ -446,6 +447,7 @@ export function SimBoard() {
   const [opt, setOpt] = useState<Opt | null>(null);
   const [old, setOld] = useState<OldSim | null>(null);
   const [disc, setDisc] = useState<Disc | null>(null);
+  const [play, setPlay] = useState<Disc | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => {
     Promise.all([
@@ -461,19 +463,26 @@ export function SimBoard() {
         if (!r.ok) throw new Error("長期模擬 HTTP " + r.status);
         return r.json() as Promise<Disc>;
       }),
+      fetch("/data/playbook_sim.json").then((r) => {
+        if (!r.ok) throw new Error("一小時手冊 HTTP " + r.status);
+        return r.json() as Promise<Disc>;
+      }),
     ])
-      .then(([a, b, c]) => {
+      .then(([a, b, c, d]) => {
         setOpt(a);
         setOld(b);
         setDisc(c);
+        setPlay(d);
       })
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : "讀取失敗"));
   }, []);
   if (err) return <p className="err">模擬讀不到：{err}</p>;
-  if (!opt || !old || !disc) return <p className="note">讀取模擬…</p>;
+  if (!opt || !old || !disc || !play) return <p className="note">讀取模擬…</p>;
   const colors = ["#e4b15a", "#7dcea0"];
   return (
     <>
+      <div className="banner">{play.disclaimer}</div>
+      <DiscView book={play} />
       <div className="banner">{disc.disclaimer}</div>
       <DiscView book={disc} />
       <div className="banner">{opt.disclaimer}</div>
