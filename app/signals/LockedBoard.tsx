@@ -37,6 +37,7 @@ type SentRow = {
   id: number;
   symbol: string;
   triggered_at: string;
+  telegram_sent?: boolean;
   open_ms: number | null;
   entry: number | null;
   volume: number | null;
@@ -238,12 +239,24 @@ function dropKey(symbol: string, openMs: number | null) {
   return `${pair}|${openMs}`;
 }
 
-function mergeSignals(feed: Feed | null): Signal[] {
-  // Signals page lists Telegram deliveries only. Backtest rows and unsent backfill stay off this page.
-  const rows: Signal[] = [];
+function mergeSignals(hist: Signal[], feed: Feed | null): Signal[] {
+  // Full locked backtest stays on this page. Live rows are added on top, never used to hide history.
+  const sentKeys = new Set(
+    (feed?.sent ?? [])
+      .filter((e) => e.telegram_sent !== false)
+      .map((e) => dropKey(e.symbol, e.open_ms))
+      .filter(Boolean),
+  );
+  const rows: Signal[] = hist.map((s) => (sentKeys.has(`${s.pair}|${s.open_ms}`) ? { ...s, live: true } : { ...s, live: !!s.live }));
+  const have = new Set(rows.map((s) => `${s.pair}|${s.open_ms}`));
   for (const e of feed?.sent ?? []) {
     const sig = sentToSignal(e);
-    if (sig) rows.push(sig);
+    if (!sig) continue;
+    sig.live = e.telegram_sent !== false;
+    const key = `${sig.pair}|${sig.open_ms}`;
+    if (have.has(key)) continue;
+    have.add(key);
+    rows.push(sig);
   }
   return rows;
 }
@@ -335,6 +348,8 @@ function applyWin(s: Signal, win: WinMap | null | undefined): Signal {
 const TARGETS = new Set(["GTC|2026-09-30 15:31", "SAGA|2026-09-10 21:39", "SAND|2026-10-02 14:51"]);
 
 export function LockedBoard() {
+  const [data, setData] = useState<Payload | null>(null);
+  const [err, setErr] = useState("");
   const [feed, setFeed] = useState<Feed | null>(null);
   const [feedErr, setFeedErr] = useState("");
   const [feedAt, setFeedAt] = useState("");
@@ -346,6 +361,16 @@ export function LockedBoard() {
   const [pair, setPair] = useState("");
   const [focusMs, setFocusMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    fetch("/data/locked_signals.json", { cache: "no-store" })
+      .then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then((json: Payload) => setData(json))
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "讀取失敗"));
+  }, []);
 
   useEffect(() => {
     let cancel = false;
@@ -386,14 +411,14 @@ export function LockedBoard() {
   }, []);
 
   const merged = useMemo(
-    () => mergeSignals(feed).map((s) => {
+    () => mergeSignals(data?.signals ?? [], feed).map((s) => {
       const extra = extraWins[`${s.pair}|${s.open_ms}`];
-      const withWin = applyWin(s, extra);
+      const withWin = applyWin(s, extra ?? s.win);
       if (!extra) return withWin;
       const scored = scorePath(extra);
       return { ...withWin, ...scored };
     }),
-    [feed, extraWins],
+    [data, feed, extraWins],
   );
 
   useEffect(() => {
@@ -506,8 +531,8 @@ export function LockedBoard() {
     document.getElementById("kline")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  if (!feed && feedErr) return <p className="err">訊號表讀不到：{feedErr}</p>;
-  if (!feed) return <p className="note">讀取已送出的訊號…</p>;
+  if (!data && err) return <p className="err">訊號表讀不到：{err}</p>;
+  if (!data) return <p className="note">讀取鎖定訊號…</p>;
 
   return (
     <section>
@@ -545,18 +570,19 @@ export function LockedBoard() {
         markers={markers}
         focusMs={focusMs}
       />
-    </div> : <p className="note">還沒有已送出的訊號。</p>}
+    </div> : <p className="note">還沒有訊號。</p>}
 
 
       <div className="cards">
-        <div className="card"><b>{merged.length}</b><span>已送出的訊號</span><em>{new Set(merged.map((s) => s.symbol)).size} 檔現貨</em></div>
-        <div className="card"><b>{merged.filter((s) => (s.score ?? 0) >= 8).length}</b><span>Score 8–10</span><em>有分數才計</em></div>
-        <div className="card"><b>{merged.filter((s) => s.red === 1).length}</b><span>任一時窗 ≤ −10%</span><em>事後才標</em></div>
+        <div className="card"><b>{merged.length}</b><span>鎖定訊號</span><em>{new Set(merged.map((s) => s.symbol)).size} 檔現貨</em></div>
+        <div className="card"><b>{data.per_day}</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
+        <div className="card"><b>{merged.filter((s) => (s.score ?? 0) >= 8).length}</b><span>Score 8–10</span><em>1–3 分有 {merged.filter((s) => s.score != null && s.score <= 3).length} 筆</em></div>
+        <div className="card"><b>{merged.filter((s) => s.red === 1).length}</b><span>任一時窗 ≤ −10%</span><em>其中 ≤ −15% 有 {data.red_flag_15_n} 筆</em></div>
       </div>
       <p className="note">
-        只列 Telegram 已收下的 P12 進場，每 5 秒與即時頁同一張 alerts 對齊。9 月回測與未送出的補庫不在這頁。
-        Score 等走勢出來才算，對到研究樣本 {COHORT.length} 筆的十分位，窗未滿會再更新。
-        {feedAt ? `上次抓取 ${taipei(feedAt)}` : ""}
+        明細含 9 月起的鎖定規則回測（Score、時窗優勢、當下量能都在），再加上之後寫進 alerts 的進場。已送到 Telegram 的列標「已送」，每 5 秒與即時頁對齊；沒送出的回測補庫一樣留在這頁。
+        新進場的 Score 等走勢出來才算，對到研究樣本 {COHORT.length} 筆的十分位，窗未滿會再更新。
+        {feedAt ? `上次抓取 ${taipei(feedAt)}` : "正在接即時訊號…"}
         {feedErr ? `（即時更新失敗：${feedErr}）` : ""}
       </p>
 

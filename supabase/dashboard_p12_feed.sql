@@ -1,6 +1,6 @@
--- Sent P12 alerts for the signals page, plus unsent keys so backfill-only rows can be dropped.
+-- All locked P12 alerts for the signals page (backfill and live, sent or not).
 -- Anon cannot select alerts. Security definer. Does not change worker writes.
--- Applied on etdgcixvrjylxpkucxsd as migration dashboard_p12_feed.
+-- Applied on etdgcixvrjylxpkucxsd as migration dashboard_p12_feed_all.
 
 create or replace function public.dashboard_p12_feed()
 returns jsonb
@@ -17,7 +17,7 @@ as $$
           'id', a.id,
           'symbol', a.symbol,
           'triggered_at', a.triggered_at,
-          'telegram_sent', true,
+          'telegram_sent', coalesce(a.telegram_sent, false),
           'open_ms', nullif(a.payload->>'open_ms', '')::bigint,
           'entry', nullif(a.payload->>'close', '')::double precision,
           'volume', nullif(a.payload->>'volume', '')::double precision,
@@ -34,21 +34,8 @@ as $$
       )
       from alerts a
       where a.alert_type = 'p12_z278'
-        and a.telegram_sent
     ), '[]'::jsonb),
-    'unsent', coalesce((
-      select jsonb_agg(
-        jsonb_build_object(
-          'id', a.id,
-          'symbol', a.symbol,
-          'open_ms', nullif(a.payload->>'open_ms', '')::bigint
-        )
-        order by a.triggered_at desc
-      )
-      from alerts a
-      where a.alert_type = 'p12_z278'
-        and not coalesce(a.telegram_sent, false)
-    ), '[]'::jsonb)
+    'unsent', '[]'::jsonb
   );
 $$;
 
