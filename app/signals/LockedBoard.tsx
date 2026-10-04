@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SignalChart, type ChartMarker } from "@/components/SignalChart";
+import { winCells, winHeaders, type WinMap } from "@/components/ExtremeCell";
 
 type Signal = {
   symbol: string;
@@ -21,6 +22,7 @@ type Signal = {
   d1_up: number | null;
   d1_dn: number | null;
   red: number;
+  win?: WinMap | null;
 };
 
 type Payload = {
@@ -56,11 +58,6 @@ function price(n: number | null) {
   return n.toLocaleString("en-US", { maximumFractionDigits: d });
 }
 
-function pctPts(n: number | null) {
-  if (n == null) return "—";
-  const sign = n > 0 ? "+" : "";
-  return sign + n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 }) + "%";
-}
 
 const TARGETS = new Set(["GTC|2026-09-30 15:31", "SAGA|2026-09-10 21:39", "SAND|2026-10-02 14:51"]);
 
@@ -201,7 +198,7 @@ export function LockedBoard() {
           只看 ≤ −10% 紅旗
         </label>
       </div>
-      <p className="note">點時間或幣別會把上面的 K 線跳到那一筆。漲跌是進場後路徑最大漲／最大跌（百分點），不是收盤報酬。</p>
+      <p className="note">點時間或幣別會把上面的 K 線跳到那一筆。每一格是進場之後該時段的最大漲或最大跌：價位、台北時間、相對進場收盤的漲跌幅。15 分／1 時／4 時／1 日分別是之後 15、60、240、1440 根 1 分 K 的最高價與最低價；時間是那根 K 的開盤。標「未滿」表示資料還沒走完。</p>
       <div className="scroll">
         <table>
           <thead>
@@ -214,12 +211,7 @@ export function LockedBoard() {
               <th>ATR%</th>
               <th>資金費率</th>
               <th>Score</th>
-              <th>1h 漲</th>
-              <th>1h 跌</th>
-              <th>4h 漲</th>
-              <th>4h 跌</th>
-              <th>1d 漲</th>
-              <th>1d 跌</th>
+              {winHeaders()}
             </tr>
           </thead>
           <tbody>
@@ -244,18 +236,13 @@ export function LockedBoard() {
                   <td>{s.atr15_pct == null ? "—" : num(s.atr15_pct, 2)}</td>
                   <td className={cls(s.funding_pct)}>{s.funding_pct == null ? "—" : `${num(s.funding_pct, 4)}%`}</td>
                   <td className={cls(s.score)}>{num(s.score, 2)}</td>
-                  <td className={cls(s.h1_up)}>{pctPts(s.h1_up)}</td>
-                  <td className={cls(s.h1_dn)}>{pctPts(s.h1_dn)}</td>
-                  <td className={cls(s.h4_up)}>{pctPts(s.h4_up)}</td>
-                  <td className={cls(s.h4_dn)}>{pctPts(s.h4_dn)}</td>
-                  <td className={cls(s.d1_up)}>{pctPts(s.d1_up)}</td>
-                  <td className={cls(s.d1_dn)}>{pctPts(s.d1_dn)}</td>
+                  {winCells(s.win, s.pair + s.open_ms)}
                 </tr>
               );
             })}
             {slice.length === 0 && (
               <tr>
-                <td className="left" colSpan={14}>沒有符合的訊號。</td>
+                <td className="left" colSpan={16}>沒有符合的訊號。</td>
               </tr>
             )}
           </tbody>

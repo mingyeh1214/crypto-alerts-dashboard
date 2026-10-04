@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { pct } from "@/lib/format";
+import { WIN_CSV_HEADER, winCells, winCsv, winHeaders, type WinMap } from "@/components/ExtremeCell";
 
 type Coin = {
   symbol: string;
@@ -32,6 +33,7 @@ type Row = {
   ret_1d: number | null;
   max_up: number | null;
   max_dn: number | null;
+  win?: WinMap | null;
 };
 
 type Payload = {
@@ -261,7 +263,7 @@ export function Explorer() {
       }
     } else {
       lines.push(
-        "time,symbol,base,rule,close,multiple,quiet_1h,quiet_4h,ret_bar,prior_24h,oi_1h,oi_z,ret_15m,ret_30m,ret_1h,ret_4h,ret_1d,max_up,max_dn",
+        "time,symbol,base,rule,close,multiple,quiet_1h,quiet_4h,ret_bar,prior_24h,oi_1h,oi_z,ret_15m,ret_30m,ret_1h,ret_4h,ret_1d," + WIN_CSV_HEADER + ",max_up,max_dn",
       );
       for (const r of view.rows) {
         lines.push(
@@ -283,6 +285,7 @@ export function Explorer() {
             r.ret_1h ?? "",
             r.ret_4h ?? "",
             r.ret_1d ?? "",
+            ...winCsv(r.win),
             r.max_up ?? "",
             r.max_dn ?? "",
           ].join(","),
@@ -497,8 +500,9 @@ export function Explorer() {
                 <th>+1 時</th>
                 <th>+4 時</th>
                 <th>+1 日</th>
-                <th>最大漲</th>
-                <th>最大跌</th>
+                {winHeaders()}
+                <th>至今最大漲</th>
+                <th>至今最大跌</th>
                 {detail && (
                   <>
                     <th>安靜 1h</th>
@@ -528,6 +532,7 @@ export function Explorer() {
                   <td className={cls(r.ret_1h)}>{pct(r.ret_1h)}</td>
                   <td className={cls(r.ret_4h)}>{pct(r.ret_4h)}</td>
                   <td className={cls(r.ret_1d)}>{pct(r.ret_1d)}</td>
+                  {winCells(r.win, r.symbol + r.time)}
                   <td className={cls(r.max_up)}>{pct(r.max_up)}</td>
                   <td className={cls(r.max_dn)}>{pct(r.max_dn)}</td>
                   {detail && (
@@ -544,7 +549,7 @@ export function Explorer() {
               ))}
               {slice.length === 0 && (
                 <tr>
-                  <td className="left" colSpan={detail ? 18 : 12}>
+                  <td className="left" colSpan={detail ? 26 : 20}>
                     沒有符合的單筆。選「0 筆」時只會出現在各幣表。
                   </td>
                 </tr>
@@ -574,7 +579,7 @@ export function Explorer() {
         </button>
       </div>
       <p className="note">
-        點幣別會鎖定該檔並切到單筆。報酬是相對警報收盤；最大漲／跌是之後路徑極值，不是出場價。名義 $100 的金額可把百分比直接看成美元。
+        點幣別會鎖定該檔並切到單筆。+15 分到 +1 日是該時點收盤報酬。15分／1時／4時／1日最大漲跌是進場後那段 15 分 K 的最高價與最低價（價位、開盤時間、相對進場漲跌幅），不是出場價。至今最大漲跌則一路算到資料結尾。名義 $100 的金額可把百分比直接看成美元。
         窗口 {data.window_start} → {data.window_end}（台北）。
       </p>
     </section>

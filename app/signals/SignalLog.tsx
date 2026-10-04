@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { pct, taipei } from "@/lib/format";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
+import { WIN_CSV_HEADER, winCells, winCsv, winHeaders, type WinMap } from "@/components/ExtremeCell";
 
 const WINDOW_START = "2026-09-01";
 const SINCE_ISO = "2026-09-01T00:00:00+08:00";
@@ -27,6 +28,7 @@ type HistRow = {
   ret_1d: number | null;
   max_up: number | null;
   max_dn: number | null;
+  win?: WinMap | null;
 };
 
 type HistPayload = {
@@ -89,6 +91,7 @@ type EventRow = {
   ret_1d: number | null;
   max_up: number | null;
   max_dn: number | null;
+  win?: WinMap | null;
   telegram_sent: boolean | null;
   watch_status: string | null;
   m5_status: string | null;
@@ -212,6 +215,7 @@ function merge(hist: HistRow[], live: LiveEntry[]): EventRow[] {
       ret_1d: r.ret_1d,
       max_up: r.max_up,
       max_dn: r.max_dn,
+      win: r.win ?? null,
       telegram_sent: null,
       watch_status: null,
       m5_status: null,
@@ -247,6 +251,7 @@ function merge(hist: HistRow[], live: LiveEntry[]): EventRow[] {
         ret_1d: e.ret_1d,
         max_up: null,
         max_dn: null,
+        win: null,
         telegram_sent: e.telegram_sent,
         watch_status: e.watch_status,
         m5_status: e.m5_status,
@@ -440,7 +445,9 @@ export function SignalLog() {
 
   function downloadCsv() {
     const lines = [
-      "time_taipei,symbol,base,rule,source,close,multiple,oi_z,oi_1h,quiet_1h,quiet_4h,ret_bar,prior_24h,ret_15m,ret_30m,ret_1h,ret_4h,ret_1d,max_up,max_dn,telegram_sent,watch_status",
+      "time_taipei,symbol,base,rule,source,close,multiple,oi_z,oi_1h,quiet_1h,quiet_4h,ret_bar,prior_24h,ret_15m,ret_30m,ret_1h,ret_4h,ret_1d," +
+        WIN_CSV_HEADER +
+        ",max_up,max_dn,telegram_sent,watch_status",
     ];
     for (const r of view.rows) {
       lines.push(
@@ -463,6 +470,7 @@ export function SignalLog() {
           r.ret_1h ?? "",
           r.ret_4h ?? "",
           r.ret_1d ?? "",
+          ...winCsv(r.win),
           r.max_up ?? "",
           r.max_dn ?? "",
           r.telegram_sent == null ? "" : r.telegram_sent ? 1 : 0,
@@ -664,8 +672,9 @@ export function SignalLog() {
                 <th>+15 分</th>
                 <th>+4 時</th>
                 <th>+1 日</th>
-                <th>最大漲</th>
-                <th>最大跌</th>
+                {winHeaders()}
+                <th>至今最大漲</th>
+                <th>至今最大跌</th>
                 {detail && (
                   <>
                     <th>OI 1h</th>
@@ -697,6 +706,7 @@ export function SignalLog() {
                   <td className={cls(r.ret_15m)}>{pct(r.ret_15m)}</td>
                   <td className={cls(r.ret_4h)}>{pct(r.ret_4h)}</td>
                   <td className={cls(r.ret_1d)}>{pct(r.ret_1d)}</td>
+                  {winCells(r.win, r.key)}
                   <td className={cls(r.max_up)}>{pct(r.max_up)}</td>
                   <td className={cls(r.max_dn)}>{pct(r.max_dn)}</td>
                   {detail && (
@@ -721,7 +731,7 @@ export function SignalLog() {
               ))}
               {slice.length === 0 && (
                 <tr>
-                  <td className="left" colSpan={detail ? 20 : 11}>
+                  <td className="left" colSpan={detail ? 28 : 19}>
                     沒有符合的單筆。
                   </td>
                 </tr>
@@ -752,7 +762,7 @@ export function SignalLog() {
       </div>
       <p className="note">
         預設只看 OI 通過（線上規則）。「僅現貨」是回測裡沒有永續 OI 的對照，不會出現在 Telegram。
-        回測的「+15 分」是舊規則進場後 15 分報酬。線上新單的 +5 分、+15 分寫在追蹤欄（先驗證、再驗證），+4 時／+1 日仍是摘要。最大漲／跌只有回測有。
+        回測的「+15 分」是舊規則進場後 15 分收盤報酬。15分到 1日的最大漲跌是進場後那段 15 分 K 的最高／最低（價位、開盤時間、相對進場漲跌幅）。至今最大漲跌才是一路到資料結尾。線上新單若沒有對上這份回測，這幾格是空的。
         點幣別可鎖定該檔。不是投資建議。
       </p>
     </section>
