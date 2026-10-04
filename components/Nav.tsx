@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/", label: "總覽" },
-  { href: "/strategy", label: "策略" },
   { href: "/backtests", label: "回測" },
   { href: "/replay", label: "參數" },
   { href: "/signals", label: "訊號" },

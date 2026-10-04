@@ -201,3 +201,6 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
 }
 @media (max-width: 800px) { .mark-list { max-height: 180px; } .chart-box.tv-chart { height: 560px; } }
 @media (max-width: 720px) { .chart-box { height: 640px; } }
+
+.copy { max-width: 46rem; }
+.copy p { line-height: 1.75; margin: 0 0 0.95rem; }
