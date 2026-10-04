@@ -17,6 +17,8 @@ type Signal = {
   turn_pct: number | null;
   atr15_pct: number | null;
   funding_pct: number | null;
+  volume: number | null;
+  quote_usdt: number | null;
   h1_up: number | null;
   h1_dn: number | null;
   h4_up: number | null;
@@ -50,6 +52,8 @@ type SortKey =
   | "turn"
   | "atr"
   | "funding"
+  | "volume"
+  | "quote"
   | "score"
   | "m15_up"
   | "m15_dn"
@@ -89,6 +93,10 @@ function sortValue(s: Signal, key: SortKey): number | string | null {
       return s.atr15_pct;
     case "funding":
       return s.funding_pct;
+    case "volume":
+      return s.volume;
+    case "quote":
+      return s.quote_usdt;
     case "score":
       return s.score;
     default: {
@@ -131,6 +139,17 @@ function scoreCls(n: number | null | undefined) {
 function num(n: number | null | undefined, d = 2) {
   if (n == null || Number.isNaN(n)) return "—";
   return n.toLocaleString("en-US", { maximumFractionDigits: d, minimumFractionDigits: d });
+}
+
+function amt(n: number | null | undefined) {
+  if (n == null || Number.isNaN(n)) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000_000) {
+    return n.toLocaleString("en-US", { notation: "compact", maximumFractionDigits: 2 });
+  }
+  if (abs >= 1000) return n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (abs >= 1) return n.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  return n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
 function price(n: number | null) {
@@ -292,7 +311,7 @@ export function LockedBoard() {
           只看 ≤ −10% 紅旗
         </label>
       </div>
-      <p className="note">點欄位標題可在升序與降序之間切換，空值排在最後。點時間或幣別會把上面的 K 線跳到那一筆。每一格是進場之後該時段的最大漲或最大跌：價位、台北時間、相對進場收盤的漲跌幅。15 分／1 時／4 時／1 日分別是之後 15、60、240、1440 根 1 分 K 的最高價與最低價；時間是那根 K 的開盤。標「未滿」表示資料還沒走完。最大漲跌欄位依漲跌幅排序。</p>
+      <p className="note">當下交易量是訊號那一根 1 分 K 的基礎幣成交量，當下交易金額是同一根的 USDT 成交額。點欄位標題可在升序與降序之間切換，空值排在最後。點時間或幣別會把上面的 K 線跳到那一筆。每一格是進場之後該時段的最大漲或最大跌：價位、台北時間、相對進場收盤的漲跌幅。15 分／1 時／4 時／1 日分別是之後 15、60、240、1440 根 1 分 K 的最高價與最低價；時間是那根 K 的開盤。標「未滿」表示資料還沒走完。最大漲跌欄位依漲跌幅排序。</p>
       <div className="scroll">
         <table>
           <thead>
@@ -300,6 +319,8 @@ export function LockedBoard() {
               <SortTh col="time" label="發送（台北）" left />
               <SortTh col="symbol" label="幣" left />
               <SortTh col="entry" label="進場價" />
+              <SortTh col="volume" label="當下交易量" />
+              <SortTh col="quote" label="當下交易金額" />
               <SortTh col="z" label="z" />
               <SortTh col="turn" label="轉強" />
               <SortTh col="atr" label="ATR%" />
@@ -327,6 +348,8 @@ export function LockedBoard() {
                     {s.red ? <span className="sym"> 紅旗</span> : null}
                   </td>
                   <td>{price(s.entry)}</td>
+                  <td title={s.volume == null ? undefined : String(s.volume)}>{amt(s.volume)}</td>
+                  <td title={s.quote_usdt == null ? undefined : `${s.quote_usdt} USDT`}>{amt(s.quote_usdt)}</td>
                   <td>{num(s.z, 2)}</td>
                   <td>{s.turn_pct == null ? "—" : `${num(s.turn_pct, 2)}%`}</td>
                   <td>{s.atr15_pct == null ? "—" : num(s.atr15_pct, 2)}</td>
@@ -338,7 +361,7 @@ export function LockedBoard() {
             })}
             {slice.length === 0 && (
               <tr>
-                <td className="left" colSpan={16}>沒有符合的訊號。</td>
+                <td className="left" colSpan={18}>沒有符合的訊號。</td>
               </tr>
             )}
           </tbody>
