@@ -8,6 +8,7 @@ import type {
   ISeriesApi,
   ISeriesMarkersPluginApi,
   LineData,
+  MouseEventParams,
   SeriesMarker,
   Time,
   UTCTimestamp,
@@ -133,6 +134,14 @@ function stamp(sec: number): UTCTimestamp {
   return (sec + TPE) as UTCTimestamp;
 }
 
+function formatChartPrice(value: number) {
+  return value.toFixed(6);
+}
+
+function formatPercent(value: number) {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+
 function linePoints(candles: Candle[], values: (number | null)[]): LinePoint[] {
   return candles.map((c, i) => {
     const time = stamp(c.time);
@@ -224,6 +233,9 @@ export function SignalChart({
   const [status, setStatus] = useState("載入 K 線…");
   const [bars, setBars] = useState(0);
   const [live, setLive] = useState<"" | "ok" | "stale">("");
+  const readoutRef = useRef<HTMLDivElement | null>(null);
+  const latestPriceRef = useRef<number | null>(null);
+  const hoveredPriceRef = useRef<number | null>(null);
 
   useEffect(() => {
     const el = host.current;
@@ -235,6 +247,22 @@ export function SignalChart({
     setLive("");
     chartRef.current = null;
     markersRef.current = null;
+    latestPriceRef.current = null;
+    hoveredPriceRef.current = null;
+    if (readoutRef.current) readoutRef.current.hidden = true;
+
+    const updateReadout = () => {
+      const node = readoutRef.current;
+      const price = hoveredPriceRef.current;
+      const current = latestPriceRef.current;
+      if (!node || price == null || current == null || !Number.isFinite(price) || !Number.isFinite(current) || current === 0) {
+        if (node) node.hidden = true;
+        return;
+      }
+      const change = ((price - current) / current) * 100;
+      node.textContent = `游標價格 ${formatChartPrice(price)} · 對現價 ${formatPercent(change)}（現價 ${formatChartPrice(current)}）`;
+      node.hidden = false;
+    };
 
     let bundle: Bundle | null = null;
     let candles: Candle[] = [];
@@ -242,6 +270,8 @@ export function SignalChart({
     const applyAll = (next: Candle[], followRight: boolean) => {
       if (!bundle) return;
       const view = buildView(next);
+      latestPriceRef.current = next.length ? next[next.length - 1].close : null;
+      updateReadout();
       const range = bundle.chart.timeScale().getVisibleLogicalRange();
       const atRight = range != null && next.length - range.to < 3;
       bundle.candle.setData(view.candle);
@@ -260,6 +290,8 @@ export function SignalChart({
     const applyTail = (prev: Candle[], next: Candle[]) => {
       if (!bundle) return;
       const view = buildView(next);
+      latestPriceRef.current = next.length ? next[next.length - 1].close : null;
+      updateReadout();
       const from = Math.max(0, prev.length - 1);
       const bump = (series: ISeriesApi<"Line" | "Histogram" | "Candlestick">, rows: { time: Time }[]) => {
         for (let i = from; i < rows.length; i++) series.update(rows[i] as never);
@@ -330,6 +362,22 @@ export function SignalChart({
         wickDownColor: DN,
         priceFormat: mainPriceFormat,
       });
+      const onCrosshairMove = (param: MouseEventParams<Time>) => {
+        if (param.point == null) {
+          hoveredPriceRef.current = null;
+          updateReadout();
+          return;
+        }
+        const data = param.seriesData.get(candle);
+        if (!data || !("close" in data) || typeof data.close !== "number") {
+          hoveredPriceRef.current = null;
+          updateReadout();
+          return;
+        }
+        hoveredPriceRef.current = data.close;
+        updateReadout();
+      };
+      chart.subscribeCrosshairMove(onCrosshairMove);
       const ema9 = chart.addSeries(lc.LineSeries, mainLineOpts(EMA9));
       const ema21 = chart.addSeries(lc.LineSeries, mainLineOpts(EMA21));
       const ema55 = chart.addSeries(lc.LineSeries, mainLineOpts(EMA55));
@@ -491,7 +539,9 @@ export function SignalChart({
         <span><i style={{ background: UP }} />量 / MACD</span>
         <span><i style={{ background: EMA55 }} />RSI 14</span>
       </div>
-      <div className="chart-box" ref={host} />
+      <div className="chart-box" ref={host}>
+        <div className="chart-crosshair-readout" ref={readoutRef} hidden />
+      </div>
       <p className="note">
         {status
           ? status

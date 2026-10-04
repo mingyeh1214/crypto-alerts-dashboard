@@ -182,7 +182,13 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
 .chart-layout { display: grid; grid-template-columns: 1fr 168px; gap: 10px; align-items: stretch; }
 @media (max-width: 800px) { .chart-layout { grid-template-columns: 1fr; } }
 .chart-frame { position: relative; min-height: 320px; }
-.chart-box { height: min(520px, 58vh); min-height: 380px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #131922; }
+.chart-box { position: relative; height: min(520px, 58vh); min-height: 380px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #131922; }
+.chart-crosshair-readout {
+  position: absolute; top: 10px; left: 10px; z-index: 5;
+  pointer-events: none; padding: 6px 9px; border: 1px solid #3d4d62; border-radius: 6px;
+  background: rgba(19, 25, 34, 0.9); color: var(--text); font-size: 0.78rem;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
 .chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 6px; color: var(--muted); font-size: 0.75rem; }
 .chart-legend i { display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle; border-radius: 2px; }
 .chart-box.tv-chart { height: min(640px, 68vh); min-height: 420px; }
