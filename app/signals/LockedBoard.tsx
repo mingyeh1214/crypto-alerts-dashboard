@@ -5,6 +5,7 @@ import { SignalChart, type ChartMarker } from "@/components/SignalChart";
 import { winCells, type WinCell, type WinMap } from "@/components/ExtremeCell";
 import { taipei } from "@/lib/format";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
+import cohortE from "@/lib/cohort-e.json";
 
 type Signal = {
   symbol: string;
@@ -237,19 +238,45 @@ function dropKey(symbol: string, openMs: number | null) {
   return `${pair}|${openMs}`;
 }
 
-function mergeSignals(hist: Signal[], feed: Feed | null): Signal[] {
-  const unsent = new Set((feed?.unsent ?? []).map((u) => dropKey(u.symbol, u.open_ms)));
-  const rows = hist.filter((s) => !unsent.has(`${s.pair}|${s.open_ms}`));
-  const have = new Set(rows.map((s) => `${s.pair}|${s.open_ms}`));
+function mergeSignals(feed: Feed | null): Signal[] {
+  // Signals page lists Telegram deliveries only. Backtest rows and unsent backfill stay off this page.
+  const rows: Signal[] = [];
   for (const e of feed?.sent ?? []) {
     const sig = sentToSignal(e);
-    if (!sig) continue;
-    const key = `${sig.pair}|${sig.open_ms}`;
-    if (have.has(key)) continue;
-    have.add(key);
-    rows.push(sig);
+    if (sig) rows.push(sig);
   }
   return rows;
+}
+
+const COHORT = cohortE as number[];
+
+function scorePath(win: WinMap | null | undefined): { score: number | null; score_base: number | null; E: number | null; red: number } {
+  if (!win) return { score: null, score_base: null, E: null, red: 0 };
+  const weights = { m15: 0.15, h1: 0.35, h4: 0.3, d1: 0.2 } as const;
+  let E = 0;
+  let any = false;
+  for (const k of ["m15", "h1", "h4", "d1"] as const) {
+    const cell = win[k];
+    if (!cell) continue;
+    any = true;
+    E += weights[k] * (cell.up + cell.dn) * 100;
+  }
+  if (!any) return { score: null, score_base: null, E: null, red: 0 };
+  E = Math.round(E * 10000) / 10000;
+  let rank = 0;
+  for (const x of COHORT) {
+    if (x > E) rank += 1;
+    else break;
+  }
+  const n = COHORT.length || 1;
+  const base = 10 - Math.min(9, Math.floor((rank * 10) / n));
+  const dns = (["m15", "h1", "h4", "d1"] as const).map((k) => win[k]?.dn).filter((d): d is number => d != null);
+  const red15 = dns.some((d) => d <= -0.15);
+  const red10 = dns.some((d) => d <= -0.1);
+  let score = base;
+  if (red15) score = 1;
+  else if (red10) score = Math.min(score, 3);
+  return { score, score_base: base, E, red: red10 ? 1 : 0 };
 }
 
 function extreme(slice: Candle[], entry: number, side: "up" | "dn"): { px: number; t: string; p: number } {
@@ -308,8 +335,6 @@ function applyWin(s: Signal, win: WinMap | null | undefined): Signal {
 const TARGETS = new Set(["GTC|2026-09-30 15:31", "SAGA|2026-09-10 21:39", "SAND|2026-10-02 14:51"]);
 
 export function LockedBoard() {
-  const [data, setData] = useState<Payload | null>(null);
-  const [err, setErr] = useState("");
   const [feed, setFeed] = useState<Feed | null>(null);
   const [feedErr, setFeedErr] = useState("");
   const [feedAt, setFeedAt] = useState("");
@@ -318,19 +343,9 @@ export function LockedBoard() {
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "time", dir: "desc" });
   const [redOnly, setRedOnly] = useState(false);
   const [interval, setInterval] = useState("15m");
-  const [pair, setPair] = useState("GTCUSDT");
+  const [pair, setPair] = useState("");
   const [focusMs, setFocusMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
-
-  useEffect(() => {
-    fetch("/data/locked_signals.json")
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<Payload>;
-      })
-      .then(setData)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "讀取失敗"));
-  }, []);
 
   useEffect(() => {
     let cancel = false;
@@ -371,9 +386,19 @@ export function LockedBoard() {
   }, []);
 
   const merged = useMemo(
-    () => mergeSignals(data?.signals ?? [], feed).map((s) => applyWin(s, s.win ?? extraWins[`${s.pair}|${s.open_ms}`])),
-    [data, feed, extraWins],
+    () => mergeSignals(feed).map((s) => {
+      const extra = extraWins[`${s.pair}|${s.open_ms}`];
+      const withWin = applyWin(s, extra);
+      if (!extra) return withWin;
+      const scored = scorePath(extra);
+      return { ...withWin, ...scored };
+    }),
+    [feed, extraWins],
   );
+
+  useEffect(() => {
+    setPair((cur) => (cur && merged.some((s) => s.pair === cur) ? cur : merged[0]?.pair ?? ""));
+  }, [merged]);
 
   const liveKey = useMemo(
     () =>
@@ -395,10 +420,14 @@ export function LockedBoard() {
       for (const s of need) {
         if (cancel || !s.pair || !Number.isFinite(s.entry)) return;
         try {
-          const res = await fetch(`/api/klines?symbol=${encodeURIComponent(s.pair)}&interval=1m&recent=1000`, { cache: "no-store" });
+          const res = await fetch("/api/signal-windows", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ items: [{ id: s.open_ms, pair: s.pair, open_ms: s.open_ms, entry: s.entry }] }),
+          });
           if (!res.ok) continue;
-          const json = (await res.json()) as { candles?: Candle[] };
-          const win = buildWin(json.candles ?? [], s.entry, s.open_ms);
+          const json = (await res.json()) as { rows?: { win?: WinMap }[] };
+          const win = json.rows?.[0]?.win;
           if (cancel || !win) continue;
           setExtraWins((prev) => ({ ...prev, [`${s.pair}|${s.open_ms}`]: win }));
         } catch {
@@ -477,12 +506,12 @@ export function LockedBoard() {
     document.getElementById("kline")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  if (err) return <p className="err">訊號表讀不到：{err}</p>;
-  if (!data) return <p className="note">讀取鎖定清單…</p>;
+  if (!feed && feedErr) return <p className="err">訊號表讀不到：{feedErr}</p>;
+  if (!feed) return <p className="note">讀取已送出的訊號…</p>;
 
   return (
     <section>
-      <div className="chart-sticky" id="kline">
+      {pair ? <div className="chart-sticky" id="kline">
       <h2>K 線與訊號時間</h2>
       <div className="toolbar">
         <label className="field">
@@ -516,21 +545,18 @@ export function LockedBoard() {
         markers={markers}
         focusMs={focusMs}
       />
-    </div>
+    </div> : <p className="note">還沒有已送出的訊號。</p>}
 
 
       <div className="cards">
-        <div className="card"><b>{merged.length}</b><span>鎖定訊號</span><em>{data.symbols} 檔現貨</em></div>
-        <div className="card"><b>{data.per_day}</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
-        <div className="card"><b>{num(data.score_median, 0)}</b><span>Score 中位（1–10）</span><em>均值 {num(data.score_mean, 2)}</em></div>
-        <div className="card"><b>{data.score_high_n}</b><span>Score 8–10</span><em>1–3 分有 {data.score_low_n} 筆</em></div>
-        <div className="card"><b>{data.red_flag_n}</b><span>任一時窗 ≤ −10%</span><em>其中 ≤ −15% 有 {data.red_flag_15_n} 筆</em></div>
+        <div className="card"><b>{merged.length}</b><span>已送出的訊號</span><em>{new Set(merged.map((s) => s.symbol)).size} 檔現貨</em></div>
+        <div className="card"><b>{merged.filter((s) => (s.score ?? 0) >= 8).length}</b><span>Score 8–10</span><em>有分數才計</em></div>
+        <div className="card"><b>{merged.filter((s) => s.red === 1).length}</b><span>任一時窗 ≤ −10%</span><em>事後才標</em></div>
       </div>
       <p className="note">
-        視窗 {data.first_tp} → {merged.length ? merged.reduce((a, s) => (s.tp > a ? s.tp : a), merged[0].tp) : data.last_tp}（台北）。
-        明細 {merged.length} 筆：歷史回測保留，未送 Telegram 的補庫 {feed ? feed.unsent.length : "…"} 筆已拿掉。
-        已送的即時訊號每 5 秒併入這張表（與即時頁同一張 alerts），Score 仍是原本回測分位，新進場先不給分。
-        {feedAt ? `上次抓取 ${taipei(feedAt)}` : "正在接即時訊號…"}
+        只列 Telegram 已收下的 P12 進場，每 5 秒與即時頁同一張 alerts 對齊。9 月回測與未送出的補庫不在這頁。
+        Score 等走勢出來才算，對到研究樣本 {COHORT.length} 筆的十分位，窗未滿會再更新。
+        {feedAt ? `上次抓取 ${taipei(feedAt)}` : ""}
         {feedErr ? `（即時更新失敗：${feedErr}）` : ""}
       </p>
 

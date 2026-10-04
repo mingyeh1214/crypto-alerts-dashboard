@@ -1,7 +1,7 @@
 -- Read-only snapshot for the public dashboard.
 -- Anon cannot select base tables (RLS on, no policies). This function is security definer
 -- and returns only operational fields. Service role used by crypto-alerts-worker is unchanged.
--- Applied to project etdgcixvrjylxpkucxsd as migration dashboard_live_include_symbols.
+-- Applied to project etdgcixvrjylxpkucxsd. recent_alerts is Telegram-sent P12 only.
 
 create or replace function public.dashboard_live()
 returns jsonb
@@ -14,18 +14,12 @@ as $$
     'generated_at', now(),
     'symbols_spot_enabled', (select count(*) from symbols where enabled and market_type = 'spot'),
     'symbols_futures_enabled', (select count(*) from symbols where enabled and market_type = 'futures'),
-    'rules_quiet_surge_enabled', (select count(*) from alert_rules where enabled and rule_type = 'quiet_surge_early'),
-    'rules_enabled_other', (select count(*) from alert_rules where enabled and rule_type <> 'quiet_surge_early'),
-    'quiet_surge_symbols', (
-      select coalesce(jsonb_agg(symbol order by symbol), '[]'::jsonb)
-      from alert_rules
-      where enabled and rule_type = 'quiet_surge_early' and coalesce(market_type, 'spot') = 'spot'
-    ),
-    'watches_active', (select count(*) from alert_watches where status = 'active'),
-    'watches_by_status', (
-      select coalesce(jsonb_object_agg(status, n), '{}'::jsonb)
-      from (select status, count(*) as n from alert_watches group by status) s
-    ),
+    'rules_p12_enabled', (select count(*) from alert_rules where enabled and rule_type = 'p12_z278'),
+    'rules_quiet_surge_enabled', 0,
+    'rules_enabled_other', (select count(*) from alert_rules where enabled and rule_type <> 'p12_z278'),
+    'quiet_surge_symbols', '[]'::jsonb,
+    'watches_active', 0,
+    'watches_by_status', '{}'::jsonb,
     'worker', (
       select coalesce(jsonb_agg(jsonb_build_object(
         'name', worker_name,
@@ -41,19 +35,13 @@ as $$
       from (
         select id, symbol, market_type, alert_type, severity, title, left(message, 500) as message, triggered_at, telegram_sent
         from alerts
+        where alert_type = 'p12_z278'
+          and telegram_sent
         order by triggered_at desc
         limit 30
       ) a
     ),
-    'recent_watches', (
-      select coalesce(jsonb_agg(to_jsonb(w) order by w.alert_time desc), '[]'::jsonb)
-      from (
-        select id, symbol, market_type, status, alert_time, alert_price, entry_tf, m5_status, m5_sent, m15_status, m15_sent, m4h_sent, m1d_sent, end_reason, ended_at
-        from alert_watches
-        order by coalesce(alert_time, created_at) desc
-        limit 30
-      ) w
-    )
+    'recent_watches', '[]'::jsonb
   );
 $$;
 
