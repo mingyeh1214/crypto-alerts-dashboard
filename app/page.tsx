@@ -68,7 +68,9 @@ export default function HomePage() {
           訊號頁用幣安現貨 K 線，箭頭標在發送時間，圖上可以看量能、EMA、MACD 與 RSI。這不是投資建議，也還沒接到下單。
         </p>
         <p>
-          <Link href="/signals">看已送出的訊號與 K 線 →</Link>
+          <Link href="/signals">看現貨交集的訊號與 K 線 →</Link>
+          {" · "}
+          <Link href="/signals-perp">看僅永續的九月回測 →</Link>
         </p>
       </div>
     </main>

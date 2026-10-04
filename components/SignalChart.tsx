@@ -221,11 +221,13 @@ export function SignalChart({
   interval,
   markers,
   focusMs,
+  market = "spot",
 }: {
   pair: string;
   interval: string;
   markers: ChartMarker[];
   focusMs: number | null;
+  market?: "spot" | "futures";
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -309,7 +311,7 @@ export function SignalChart({
 
     const pull = async (recent: boolean) => {
       const q = recent ? `&recent=${RECENT}` : "";
-      const res = await fetch(`/api/klines?symbol=${encodeURIComponent(pair)}&interval=${interval}${q}`, {
+      const res = await fetch(`/api/klines?symbol=${encodeURIComponent(pair)}&interval=${interval}&market=${market}${q}`, {
         signal: ac.signal,
         cache: "no-store",
       });
@@ -495,7 +497,7 @@ export function SignalChart({
       chartRef.current = null;
       markersRef.current = null;
     };
-  }, [pair, interval]);
+  }, [pair, interval, market]);
 
   useEffect(() => {
     const plugin = markersRef.current;

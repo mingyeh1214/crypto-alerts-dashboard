@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const LINKS = [
   { href: "/", label: "總覽" },
   { href: "/signals", label: "訊號" },
+  { href: "/signals-perp", label: "合約" },
   { href: "/live", label: "即時" },
   { href: "/sim", label: "模擬" },
 ];

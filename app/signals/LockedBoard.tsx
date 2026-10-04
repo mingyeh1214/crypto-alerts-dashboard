@@ -405,7 +405,17 @@ function applyWin(s: Signal, win: WinMap | null | undefined): Signal {
 
 const TARGETS = new Set(["GTC|2026-09-30 15:31", "SAGA|2026-09-10 21:39", "SAND|2026-10-02 14:51"]);
 
-export function LockedBoard() {
+export function LockedBoard({
+  dataUrl = "/data/locked_signals.json",
+  liveFeed = true,
+  chartMarket = "spot",
+  unitLabel = "檔現貨",
+}: {
+  dataUrl?: string;
+  liveFeed?: boolean;
+  chartMarket?: "spot" | "futures";
+  unitLabel?: string;
+} = {}) {
   const [data, setData] = useState<Payload | null>(null);
   const [err, setErr] = useState("");
   const [feed, setFeed] = useState<Feed | null>(null);
@@ -424,16 +434,17 @@ export function LockedBoard() {
   const [page, setPage] = useState(0);
 
   useEffect(() => {
-    fetch("/data/locked_signals.json", { cache: "no-store" })
+    fetch(dataUrl, { cache: "no-store" })
       .then((r) => {
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       })
       .then((json: Payload) => setData(json))
       .catch((e: unknown) => setErr(e instanceof Error ? e.message : "讀取失敗"));
-  }, []);
+  }, [dataUrl]);
 
   useEffect(() => {
+    if (!liveFeed) return;
     let cancel = false;
     async function load() {
       try {
@@ -469,7 +480,7 @@ export function LockedBoard() {
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, []);
+  }, [liveFeed]);
 
   const merged = useMemo(
     () => mergeSignals(data?.signals ?? [], feed).map((s) => {
@@ -633,22 +644,23 @@ export function LockedBoard() {
         interval={interval}
         markers={markers}
         focusMs={focusMs}
+        market={chartMarket}
       />
     </div> : <p className="note">還沒有訊號。</p>}
 
 
       <div className="cards">
-        <div className="card"><b>{merged.length}</b><span>鎖定訊號</span><em>{new Set(merged.map((s) => s.symbol)).size} 檔現貨</em></div>
+        <div className="card"><b>{merged.length}</b><span>鎖定訊號</span><em>{new Set(merged.map((s) => s.symbol)).size} {unitLabel}</em></div>
         <div className="card"><b>{data.per_day}</b><span>平均筆數／日</span><em>同幣冷卻 24 小時</em></div>
         <div className="card"><b>{merged.filter((s) => (s.score ?? 0) >= 8).length}</b><span>Score 8–10</span><em>1–3 分有 {merged.filter((s) => s.score != null && s.score <= 3).length} 筆</em></div>
         <div className="card"><b>{merged.filter((s) => s.red === 1).length}</b><span>任一時窗 ≤ −10%</span><em>其中 ≤ −15% 有 {data.red_flag_15_n} 筆</em></div>
       </div>
       <p className="note">
-        明細含 9 月起的鎖定規則回測（Score、時窗優勢、當下量能都在），再加上之後寫進 alerts 的進場。已送到 Telegram 的列標「已送」，每 5 秒與即時頁對齊；沒送出的回測補庫一樣留在這頁。
-        新進場的 Score 等走勢出來才算，對到研究樣本 {COHORT.length} 筆的十分位，窗未滿會再更新。
+        {liveFeed ? "明細含 9 月起的鎖定規則回測（Score、時窗優勢、當下量能都在），再加上之後寫進 alerts 的進場。已送到 Telegram 的列標「已送」，每 5 秒與即時頁對齊；沒送出的回測補庫一樣留在這頁。" : "這頁只列 2026 年 9 月、沒有同名現貨的 U 本位永續。量能 z 用合約 1 分 K 成交額，轉強、OI、ATR 0.8%～2.5%、資金費率地板與同幣 24 小時冷卻跟鎖定規則相同。不接 Telegram，也不會把現貨交集那頁的訊號混進來。"}
+        {liveFeed ? `新進場的 Score 等走勢出來才算，對到研究樣本 ${COHORT.length} 筆的十分位，窗未滿會再更新。` : `Score 用同一把現貨研究樣本 ${COHORT.length} 筆的 E 分位，方便跟現貨頁對照，不是這批合約自己重排。`}
         當下位置是訊號那一刻的均線、RSI、近 7 日和量能解讀；當下建議是作多／淡倉觀察／略過／中性標籤，不是後面會漲或會跌的判斷，也不自動開空。這份清單裡起漲四條同時落在帶內的有 {data.context_b4_n ?? "—"} 筆，其中 20 日位置也在帶內的有 {data.context_b5_n ?? "—"} 筆。建議分佈：作多 {data.context_action?.["作多"] ?? "—"}、淡倉觀察 {data.context_action?.["淡倉觀察"] ?? "—"}、略過 {data.context_action?.["略過"] ?? "—"}、中性 {data.context_action?.["中性"] ?? "—"}；資金費為負或價漲 OI 跌的偏多註解有 {data.context_long_bias_n ?? "—"} 筆。一小時手冊（已走完的小時會把等待改判放棄）：進場 {data.context_play?.["進場"] ?? "—"}、等待 {data.context_play?.["等待"] ?? "—"}、放棄 {data.context_play?.["放棄"] ?? "—"}。其中九月進場 {data.context_play_sept?.["進場"] ?? "—"}、放棄 {data.context_play_sept?.["放棄"] ?? "—"}。
-        {feedAt ? `上次抓取 ${taipei(feedAt)}` : "正在接即時訊號…"}
-        {feedErr ? `（即時更新失敗：${feedErr}）` : ""}
+        {liveFeed ? (feedAt ? `上次抓取 ${taipei(feedAt)}` : "正在接即時訊號…") : "回測窗是台北時間 2026-09-01 00:00 到 2026-10-01 00:00。"}
+        {liveFeed && feedErr ? `（即時更新失敗：${feedErr}）` : ""}
       </p>
 
       <h2>訊號明細</h2>

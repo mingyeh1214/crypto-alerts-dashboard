@@ -13,9 +13,13 @@ const INTERVALS: Record<string, number> = {
 };
 
 const START = Date.parse("2026-09-01T00:00:00+08:00");
-const HOSTS = [
+const SPOT_HOSTS = [
   "https://data-api.binance.vision",
   "https://api.binance.com",
+];
+const FUT_HOSTS = [
+  "https://www.binance.com",
+  "https://fapi.binance.com",
 ];
 
 type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
@@ -26,10 +30,13 @@ async function fetchChunk(
   start: number,
   end: number,
   fresh = false,
+  market: "spot" | "futures" = "spot",
 ): Promise<Candle[]> {
   let lastErr = "binance unavailable";
-  for (const host of HOSTS) {
-    const url = new URL(`${host}/api/v3/klines`);
+  const hosts = market === "futures" ? FUT_HOSTS : SPOT_HOSTS;
+  const path = market === "futures" ? "/fapi/v1/klines" : "/api/v3/klines";
+  for (const host of hosts) {
+    const url = new URL(`${host}${path}`);
     url.searchParams.set("symbol", symbol);
     url.searchParams.set("interval", interval);
     url.searchParams.set("startTime", String(start));
@@ -65,6 +72,7 @@ export async function GET(req: NextRequest) {
   // ASCII tickers are uppercased; Chinese spot names (e.g. 币安人生USDT) stay as listed.
   const symbol = /^[\x00-\x7F]+$/.test(raw) ? raw.toUpperCase() : raw;
   const interval = req.nextUrl.searchParams.get("interval") || "15m";
+  const market = req.nextUrl.searchParams.get("market") === "futures" ? "futures" : "spot";
   const step = INTERVALS[interval];
   if (!/^[\p{L}\p{N}]{2,32}$/u.test(symbol) || !symbol.endsWith("USDT") || !step) {
     return NextResponse.json({ error: "參數不正確" }, { status: 400 });
@@ -76,7 +84,7 @@ export async function GET(req: NextRequest) {
       const limit = Math.min(1000, Math.max(2, Math.floor(Number(recentRaw)) || 120));
       // Tight window so Binance's limit does not drop the forming candle.
       const start = end - (limit - 1) * step;
-      const candles = (await fetchChunk(symbol, interval, start, end, true))
+      const candles = (await fetchChunk(symbol, interval, start, end, true, market))
         .filter((c) => Number.isFinite(c.open) && c.time > 0)
         .sort((a, b) => a.time - b.time);
       return NextResponse.json(
@@ -89,7 +97,7 @@ export async function GET(req: NextRequest) {
     for (let t = START; t < end; t += span) {
       chunks.push([t, Math.min(end, t + span - 1)]);
     }
-    const parts = await Promise.all(chunks.map(([a, b]) => fetchChunk(symbol, interval, a, b)));
+    const parts = await Promise.all(chunks.map(([a, b]) => fetchChunk(symbol, interval, a, b, false, market)));
     const byTime = new Map<number, Candle>();
     for (const part of parts) {
       for (const c of part) {
