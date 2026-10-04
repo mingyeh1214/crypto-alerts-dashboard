@@ -656,7 +656,7 @@ export function LockedBoard({
         <div className="card"><b>{merged.filter((s) => s.red === 1).length}</b><span>任一時窗 ≤ −10%</span><em>其中 ≤ −15% 有 {data.red_flag_15_n} 筆</em></div>
       </div>
       <p className="note">
-        {liveFeed ? "明細含 9 月起的鎖定規則回測（Score、時窗優勢、當下量能都在），再加上之後寫進 alerts 的進場。已送到 Telegram 的列標「已送」，每 5 秒與即時頁對齊；沒送出的回測補庫一樣留在這頁。" : "這頁只列 2026 年 9 月、沒有同名現貨的 U 本位永續。量能 z 用合約 1 分 K 成交額，轉強、OI、ATR 0.8%～2.5%、資金費率地板與同幣 24 小時冷卻跟鎖定規則相同。不接 Telegram，也不會把現貨交集那頁的訊號混進來。"}
+        {liveFeed ? "明細含 9 月起的鎖定規則回測（Score、時窗優勢、當下量能都在），再加上之後寫進 alerts 的進場。已送到 Telegram 的列標「已送」，每 5 秒與即時頁對齊；沒送出的回測補庫一樣留在這頁。" : "這頁只列 2026 年 9 月、沒有同名現貨的 U 本位永續。量能 z 用合約 1 分 K 成交額，轉強、OI、ATR 0.8%～2.5%、資金費率地板與同幣 24 小時冷卻跟鎖定規則相同。新的僅永續進場另送 Telegram（合約 · 僅永續），不會混進現貨交集那頁。"}
         {liveFeed ? `新進場的 Score 等走勢出來才算，對到研究樣本 ${COHORT.length} 筆的十分位，窗未滿會再更新。` : `Score 用同一把現貨研究樣本 ${COHORT.length} 筆的 E 分位，方便跟現貨頁對照，不是這批合約自己重排。`}
         當下位置是訊號那一刻的均線、RSI、近 7 日和量能解讀；當下建議是作多／淡倉觀察／略過／中性標籤，不是後面會漲或會跌的判斷，也不自動開空。這份清單裡起漲四條同時落在帶內的有 {data.context_b4_n ?? "—"} 筆，其中 20 日位置也在帶內的有 {data.context_b5_n ?? "—"} 筆。建議分佈：作多 {data.context_action?.["作多"] ?? "—"}、淡倉觀察 {data.context_action?.["淡倉觀察"] ?? "—"}、略過 {data.context_action?.["略過"] ?? "—"}、中性 {data.context_action?.["中性"] ?? "—"}；資金費為負或價漲 OI 跌的偏多註解有 {data.context_long_bias_n ?? "—"} 筆。一小時手冊（已走完的小時會把等待改判放棄）：進場 {data.context_play?.["進場"] ?? "—"}、等待 {data.context_play?.["等待"] ?? "—"}、放棄 {data.context_play?.["放棄"] ?? "—"}。其中九月進場 {data.context_play_sept?.["進場"] ?? "—"}、放棄 {data.context_play_sept?.["放棄"] ?? "—"}。
         {liveFeed ? (feedAt ? `上次抓取 ${taipei(feedAt)}` : "正在接即時訊號…") : "回測窗是台北時間 2026-09-01 00:00 到 2026-10-01 00:00。"}

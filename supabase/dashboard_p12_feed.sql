@@ -35,6 +35,7 @@ as $$
       )
       from alerts a
       where a.alert_type = 'p12_z278'
+        and a.market_type = 'spot'
     ), '[]'::jsonb),
     'unsent', '[]'::jsonb
   );

@@ -1,7 +1,13 @@
 -- Higher-timeframe frames for the at-signal location note.
 -- Does not change whether P12 fires. service_role only.
 
-create or replace function public.p12_htf_bars(p_symbol text, p_asof timestamptz)
+drop function if exists public.p12_htf_bars(text, timestamptz);
+
+create or replace function public.p12_htf_bars(
+  p_symbol text,
+  p_asof timestamptz,
+  p_market text default 'spot'
+)
 returns jsonb
 language sql
 stable
@@ -17,12 +23,19 @@ as $$
       p_asof - interval '20 days' as ago_20d,
       p_asof - interval '80 days' as ago_80d
   ),
+  mkt as (
+    select case
+      when lower(btrim(coalesce(p_market, 'spot'))) = 'futures' then 'futures'
+      else 'spot'
+    end as market_type
+  ),
   base as (
     select k.open_time, k.high, k.low, k.close
     from public.klines_1m k
     cross join bounds b
+    cross join mkt
     where k.symbol = p_symbol
-      and k.market_type = 'spot'
+      and k.market_type = mkt.market_type
       and k.is_closed
       and k.open_time <= b.asof
       and k.open_time >= b.ago_80d
@@ -74,7 +87,7 @@ as $$
       select k.close
       from public.klines_1m k
       cross join bounds b
-      where k.symbol = p_symbol and k.market_type = 'spot' and k.is_closed
+      where k.symbol = p_symbol and k.market_type = (select market_type from mkt) and k.is_closed
         and k.open_time <= b.ago_1d
       order by k.open_time desc
       limit 1
@@ -83,7 +96,7 @@ as $$
       select k.close
       from public.klines_1m k
       cross join bounds b
-      where k.symbol = p_symbol and k.market_type = 'spot' and k.is_closed
+      where k.symbol = p_symbol and k.market_type = (select market_type from mkt) and k.is_closed
         and k.open_time <= b.ago_7d
       order by k.open_time desc
       limit 1
@@ -92,7 +105,7 @@ as $$
       select max(k.high)
       from public.klines_1m k
       cross join bounds b
-      where k.symbol = p_symbol and k.market_type = 'spot' and k.is_closed
+      where k.symbol = p_symbol and k.market_type = (select market_type from mkt) and k.is_closed
         and k.open_time <= b.asof
         and k.open_time >= b.ago_20d
     ),
@@ -100,7 +113,7 @@ as $$
       select min(k.low)
       from public.klines_1m k
       cross join bounds b
-      where k.symbol = p_symbol and k.market_type = 'spot' and k.is_closed
+      where k.symbol = p_symbol and k.market_type = (select market_type from mkt) and k.is_closed
         and k.open_time <= b.asof
         and k.open_time >= b.ago_20d
     ),
@@ -108,7 +121,7 @@ as $$
       select max(k.high)
       from public.klines_1m k
       cross join bounds b
-      where k.symbol = p_symbol and k.market_type = 'spot' and k.is_closed
+      where k.symbol = p_symbol and k.market_type = (select market_type from mkt) and k.is_closed
         and k.open_time < b.ago_1d
         and k.open_time >= b.ago_10d
     ),
@@ -116,7 +129,7 @@ as $$
       select k.close
       from public.klines_1m k
       cross join bounds b
-      where k.symbol = p_symbol and k.market_type = 'spot' and k.is_closed
+      where k.symbol = p_symbol and k.market_type = (select market_type from mkt) and k.is_closed
         and k.open_time <= b.ago_1d
       order by k.open_time desc
       limit 1
@@ -124,5 +137,5 @@ as $$
   );
 $$;
 
-revoke all on function public.p12_htf_bars(text, timestamptz) from public;
-grant execute on function public.p12_htf_bars(text, timestamptz) to service_role;
+revoke all on function public.p12_htf_bars(text, timestamptz, text) from public;
+grant execute on function public.p12_htf_bars(text, timestamptz, text) to service_role;
