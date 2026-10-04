@@ -9,6 +9,7 @@ const INTERVALS: Record<string, number> = {
   "15m": 15 * 60_000,
   "1h": 60 * 60_000,
   "4h": 4 * 60 * 60_000,
+  "1d": 24 * 60 * 60_000,
 };
 
 const START = Date.parse("2026-09-01T00:00:00+08:00");
@@ -19,7 +20,13 @@ const HOSTS = [
 
 type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
 
-async function fetchChunk(symbol: string, interval: string, start: number, end: number): Promise<Candle[]> {
+async function fetchChunk(
+  symbol: string,
+  interval: string,
+  start: number,
+  end: number,
+  fresh = false,
+): Promise<Candle[]> {
   let lastErr = "binance unavailable";
   for (const host of HOSTS) {
     const url = new URL(`${host}/api/v3/klines`);
@@ -28,7 +35,7 @@ async function fetchChunk(symbol: string, interval: string, start: number, end: 
     url.searchParams.set("startTime", String(start));
     url.searchParams.set("endTime", String(end));
     url.searchParams.set("limit", "1000");
-    const res = await fetch(url, { next: { revalidate: 300 } });
+    const res = await fetch(url, fresh ? { cache: "no-store" } : { next: { revalidate: 300 } });
     if (!res.ok) {
       lastErr = `${host} ${res.status}`;
       continue;
@@ -63,12 +70,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "參數不正確" }, { status: 400 });
   }
   const end = Date.now();
-  const span = 1000 * step;
-  const chunks: [number, number][] = [];
-  for (let t = START; t < end; t += span) {
-    chunks.push([t, Math.min(end, t + span - 1)]);
-  }
+  const recentRaw = req.nextUrl.searchParams.get("recent");
   try {
+    if (recentRaw != null) {
+      const limit = Math.min(1000, Math.max(2, Math.floor(Number(recentRaw)) || 120));
+      // Tight window so Binance's limit does not drop the forming candle.
+      const start = end - (limit - 1) * step;
+      const candles = (await fetchChunk(symbol, interval, start, end, true))
+        .filter((c) => Number.isFinite(c.open) && c.time > 0)
+        .sort((a, b) => a.time - b.time);
+      return NextResponse.json(
+        { symbol, interval, candles },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+    const span = 1000 * step;
+    const chunks: [number, number][] = [];
+    for (let t = START; t < end; t += span) {
+      chunks.push([t, Math.min(end, t + span - 1)]);
+    }
     const parts = await Promise.all(chunks.map(([a, b]) => fetchChunk(symbol, interval, a, b)));
     const byTime = new Map<number, Candle>();
     for (const part of parts) {

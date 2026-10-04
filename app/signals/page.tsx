@@ -10,7 +10,7 @@ export default function SignalsPage() {
       <h1>鎖定訊號</h1>
       <p className="lead">
         P12_z278 ＋ 15 分 ATR 0.8%～2.5% ＋ 資金費率不低於 −0.10% ＋ 同幣冷卻 24 小時。
-        K 線用幣安現貨（1 分到 4 小時），琥珀色箭頭標在訊號那一根。
+        K 線用幣安現貨（1 分到日線），含量能、EMA 9／21／55、MACD、RSI，形成中的 K 會持續更新。琥珀色箭頭標在訊號那一根。
       </p>
       <LockedBoard />
       <details className="fold">

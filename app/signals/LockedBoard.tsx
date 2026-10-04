@@ -154,7 +154,7 @@ export function LockedBoard() {
           </select>
         </label>
         <div className="seg" role="group" aria-label="K 線週期">
-          {["1m", "5m", "15m", "1h", "4h"].map((iv) => (
+          {["1m", "5m", "15m", "1h", "4h", "1d"].map((iv) => (
             <button key={iv} type="button" className={interval === iv ? "on" : ""} onClick={() => setInterval(iv)}>
               {iv}
             </button>

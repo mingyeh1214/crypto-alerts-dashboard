@@ -170,7 +170,9 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
 .chart-layout { display: grid; grid-template-columns: 1fr 168px; gap: 10px; align-items: stretch; }
 @media (max-width: 800px) { .chart-layout { grid-template-columns: 1fr; } }
 .chart-frame { position: relative; min-height: 320px; }
-.chart-box { height: min(480px, 58vh); min-height: 320px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #131922; }
+.chart-box { height: min(720px, 82vh); min-height: 540px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #131922; }
+.chart-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 6px; color: var(--muted); font-size: 0.75rem; }
+.chart-legend i { display: inline-block; width: 12px; height: 3px; margin-right: 5px; vertical-align: middle; border-radius: 2px; }
 .chart-box.tv-chart { height: min(640px, 68vh); min-height: 420px; }
 .chart-box.tv-chart iframe { width: 100% !important; height: 100% !important; }
 .chart-empty {
@@ -198,4 +200,4 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
   border-color: var(--amber); color: var(--amber); background: var(--amber-dim);
 }
 @media (max-width: 800px) { .mark-list { max-height: 180px; } .chart-box.tv-chart { height: 560px; } }
-@media (max-width: 720px) { .chart-box { height: 320px; } }
+@media (max-width: 720px) { .chart-box { height: 640px; } }
