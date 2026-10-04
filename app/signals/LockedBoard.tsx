@@ -7,8 +7,17 @@ import { taipei } from "@/lib/format";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
 import cohortE from "@/lib/cohort-e.json";
 
+type SignalContext = {
+  stance?: string;
+  stance_label?: string;
+  note?: string;
+  layer_b4?: boolean;
+  layer_b5?: boolean;
+};
+
 type Signal = {
   symbol: string;
+  context?: SignalContext | null;
   pair: string;
   tp: string;
   open_ms: number;
@@ -46,6 +55,7 @@ type SentRow = {
   turn: number | null;
   atr15_pct: number | null;
   funding: number | null;
+  context?: SignalContext | null;
 };
 
 type Feed = {
@@ -68,6 +78,8 @@ type Payload = {
   score_low_n: number;
   red_flag_n: number;
   red_flag_15_n: number;
+  context_b4_n?: number;
+  context_b5_n?: number;
   signals: Signal[];
 };
 
@@ -82,6 +94,7 @@ type SortKey =
   | "volume"
   | "quote"
   | "score"
+  | "ctx"
   | "m15_up"
   | "m15_dn"
   | "h1_up"
@@ -126,6 +139,9 @@ function sortValue(s: Signal, key: SortKey): number | string | null {
       return s.quote_usdt;
     case "score":
       return s.score;
+    case "ctx":
+      if (!s.context) return null;
+      return (s.context.layer_b5 ? 2 : 0) + (s.context.layer_b4 ? 1 : 0);
     default: {
       const [win, side] = key.split("_") as ["m15" | "h1" | "h4" | "d1", "up" | "dn"];
       const cell = s.win?.[win];
@@ -230,6 +246,7 @@ function sentToSignal(e: SentRow): Signal | null {
     red: 0,
     win: null,
     live: true,
+    context: e.context ?? null,
   };
 }
 
@@ -357,6 +374,7 @@ export function LockedBoard() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: SortDir }>({ key: "time", dir: "desc" });
   const [redOnly, setRedOnly] = useState(false);
+  const [b4Only, setB4Only] = useState(false);
   const [interval, setInterval] = useState("15m");
   const [pair, setPair] = useState("");
   const [focusMs, setFocusMs] = useState<number | null>(null);
@@ -483,6 +501,7 @@ export function LockedBoard() {
     let rows = merged;
     if (query) rows = rows.filter((r) => r.symbol.includes(query) || r.pair.includes(query));
     if (redOnly) rows = rows.filter((r) => r.red === 1);
+    if (b4Only) rows = rows.filter((r) => r.context?.layer_b4);
     const copy = [...rows];
     copy.sort((a, b) => {
       const c = compareSignals(a, b, sort.key, sort.dir);
@@ -490,9 +509,9 @@ export function LockedBoard() {
       return b.open_ms - a.open_ms || a.symbol.localeCompare(b.symbol, "en");
     });
     return copy;
-  }, [merged, q, redOnly, sort]);
+  }, [merged, q, redOnly, b4Only, sort]);
 
-  useEffect(() => setPage(0), [q, redOnly, sort.key, sort.dir]);
+  useEffect(() => setPage(0), [q, redOnly, b4Only, sort.key, sort.dir]);
 
   function toggleSort(key: SortKey) {
     setSort((prev) => {
@@ -582,6 +601,7 @@ export function LockedBoard() {
       <p className="note">
         明細含 9 月起的鎖定規則回測（Score、時窗優勢、當下量能都在），再加上之後寫進 alerts 的進場。已送到 Telegram 的列標「已送」，每 5 秒與即時頁對齊；沒送出的回測補庫一樣留在這頁。
         新進場的 Score 等走勢出來才算，對到研究樣本 {COHORT.length} 筆的十分位，窗未滿會再更新。
+        當下位置是訊號那一刻的均線、RSI、近 7 日和量能解讀，不是後面會漲或會跌的判斷。這份清單裡起漲四條同時落在帶內的有 {data.context_b4_n ?? "—"} 筆，其中 20 日位置也在帶內的有 {data.context_b5_n ?? "—"} 筆。
         {feedAt ? `上次抓取 ${taipei(feedAt)}` : "正在接即時訊號…"}
         {feedErr ? `（即時更新失敗：${feedErr}）` : ""}
       </p>
@@ -596,8 +616,12 @@ export function LockedBoard() {
           <input type="checkbox" checked={redOnly} onChange={(e) => setRedOnly(e.target.checked)} />
           只看 ≤ −10% 紅旗
         </label>
+        <label className="field inline">
+          <input type="checkbox" checked={b4Only} onChange={(e) => setB4Only(e.target.checked)} />
+          只看起漲四條帶內
+        </label>
       </div>
-      <p className="note">當下交易量是訊號那一根 1 分 K 的基礎幣成交量，當下交易金額是同一根的 USDT 成交額。點欄位標題可在升序與降序之間切換，空值排在最後。點時間或幣別會把上面的 K 線跳到那一筆。每一格是進場之後該時段的最大漲或最大跌：價位、台北時間、相對進場收盤的漲跌幅。15 分／1 時／4 時／1 日分別是之後 15、60、240、1440 根 1 分 K 的最高價與最低價；時間是那根 K 的開盤。標「未滿」表示資料還沒走完。最大漲跌欄位依漲跌幅排序。</p>
+      <p className="note">當下位置對照的是：日線 EMA20 上方 0%～8%、4h EMA20 上方 0%～5%、4h RSI 45～65、近 7 日約 −4%～+10%。四條同時成立標成貼均線起漲帶；20 日位置 0.35～0.80 是再加的一條。這欄只描述訊號當下，不用進場之後的漲跌。當下交易量是訊號那一根 1 分 K 的基礎幣成交量，當下交易金額是同一根的 USDT 成交額。點欄位標題可在升序與降序之間切換，空值排在最後。點時間或幣別會把上面的 K 線跳到那一筆。每一格是進場之後該時段的最大漲或最大跌：價位、台北時間、相對進場收盤的漲跌幅。15 分／1 時／4 時／1 日分別是之後 15、60、240、1440 根 1 分 K 的最高價與最低價；時間是那根 K 的開盤。標「未滿」表示資料還沒走完。最大漲跌欄位依漲跌幅排序。</p>
       <div className="scroll">
         <table>
           <thead>
@@ -611,6 +635,7 @@ export function LockedBoard() {
               <SortTh col="turn" label="轉強" />
               <SortTh col="atr" label="ATR%" />
               <SortTh col="funding" label="資金費率" />
+              <SortTh col="ctx" label="當下位置" left />
               <SortTh col="score" label="Score" />
               {WIN_COLS.map((c) => (
                 <SortTh key={c.key} col={c.key} label={c.label} />
@@ -641,6 +666,10 @@ export function LockedBoard() {
                   <td>{s.turn_pct == null ? "—" : `${num(s.turn_pct, 2)}%`}</td>
                   <td>{s.atr15_pct == null ? "—" : num(s.atr15_pct, 2)}</td>
                   <td className={cls(s.funding_pct)}>{s.funding_pct == null ? "—" : `${num(s.funding_pct, 4)}%`}</td>
+                  <td className="left ctx" title={s.context?.note}>
+                    <b>{s.context?.stance_label ?? "—"}</b>
+                    {s.context?.note ? <div>{s.context.note}</div> : null}
+                  </td>
                   <td className={scoreCls(s.score)} title={s.E == null ? undefined : `E ${num(s.E, 2)} · 分位 ${s.score_base ?? "—"}`}>{s.score == null ? "—" : s.score}</td>
                   {winCells(s.win, s.pair + s.open_ms)}
                 </tr>
@@ -648,7 +677,7 @@ export function LockedBoard() {
             })}
             {slice.length === 0 && (
               <tr>
-                <td className="left" colSpan={18}>沒有符合的訊號。</td>
+                <td className="left" colSpan={19}>沒有符合的訊號。</td>
               </tr>
             )}
           </tbody>

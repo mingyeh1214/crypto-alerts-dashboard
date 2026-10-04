@@ -74,6 +74,8 @@ button.sort-th {
 button.sort-th:hover, button.sort-th.on { color: var(--text); }
 button.sort-th .sort-mark { display: inline-block; width: 0.9em; margin-left: 2px; color: var(--amber); }
 td.up { color: var(--up); }
+td.ctx { max-width: 360px; min-width: 240px; white-space: normal; font-size: 0.78rem; line-height: 1.4; color: var(--muted); }
+td.ctx b { color: var(--text); display: block; margin-bottom: 2px; }
 td.dn { color: var(--down); }
 .scroll { overflow-x: auto; overflow-y: visible; border: 1px solid var(--line); border-radius: 12px; }
 .scroll table { min-width: 720px; }

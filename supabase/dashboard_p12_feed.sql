@@ -28,7 +28,8 @@ as $$
           'funding', nullif(a.payload->>'funding', '')::double precision,
           'oi_z', nullif(a.payload->>'oi_z', '')::double precision,
           'oi_1h', nullif(a.payload->>'oi_1h', '')::double precision,
-          'prior24', nullif(a.payload->>'prior24', '')::double precision
+          'prior24', nullif(a.payload->>'prior24', '')::double precision,
+          'context', a.payload->'context'
         )
         order by a.triggered_at desc
       )
