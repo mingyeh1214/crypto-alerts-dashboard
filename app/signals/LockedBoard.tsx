@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { SignalChart, type ChartEngine, type ChartMarker } from "@/components/SignalChart";
+import { SignalChart, type ChartMarker } from "@/components/SignalChart";
 
 type Signal = {
   symbol: string;
@@ -71,7 +71,6 @@ export function LockedBoard() {
   const [sort, setSort] = useState<SortKey>("time");
   const [redOnly, setRedOnly] = useState(false);
   const [interval, setInterval] = useState("15m");
-  const [engine, setEngine] = useState<ChartEngine>("site");
   const [pair, setPair] = useState("GTCUSDT");
   const [focusMs, setFocusMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
@@ -161,10 +160,6 @@ export function LockedBoard() {
             </button>
           ))}
         </div>
-        <div className="seg" role="group" aria-label="圖表來源">
-          <button type="button" className={engine === "site" ? "on" : ""} onClick={() => setEngine("site")}>站內 K 線</button>
-          <button type="button" className={engine === "tv" ? "on" : ""} onClick={() => setEngine("tv")}>TradingView</button>
-        </div>
         <span className="note">{pair.replace(/USDT$/, "")} 本頁 {coinN} 筆訊號</span>
       </div>
       <SignalChart
@@ -172,13 +167,6 @@ export function LockedBoard() {
         interval={interval}
         markers={markers}
         focusMs={focusMs}
-        engine={engine}
-        onEngine={setEngine}
-        onPick={(ms) => {
-          setFocusMs(ms);
-          const idx = filtered.findIndex((s) => s.pair === pair && s.open_ms === ms);
-          if (idx >= 0) setPage(Math.floor(idx / pageSize));
-        }}
       />
     </div>
 
