@@ -224,3 +224,11 @@ tr.pinned td { background: rgba(228, 177, 90, 0.08); }
 
 .copy { max-width: 46rem; }
 .copy p { line-height: 1.75; margin: 0 0 0.95rem; }
+
+td.action { max-width: 220px; font-size: 0.82rem; color: var(--muted); vertical-align: top; }
+td.action b { display: block; color: var(--text); margin-bottom: 2px; }
+td.action.act-long b { color: var(--up); }
+td.action.act-fade b { color: #e4b15a; }
+td.action.act-skip b { color: #9aa8b8; }
+td.action.act-neutral b { color: #b7c2d0; }
+td.action div { line-height: 1.35; white-space: normal; }
