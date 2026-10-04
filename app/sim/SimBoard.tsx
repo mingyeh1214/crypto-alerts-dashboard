@@ -2,8 +2,40 @@
 
 import { useEffect, useState } from "react";
 
-type Fill = { reason: string; px: number; qty: number; pnl: number; tp: string };
 type Trade = {
+  symbol: string;
+  signal_tp: string;
+  exit_tp: string;
+  entry: number;
+  exit: number;
+  notional: number;
+  pnl: number;
+  reason: string;
+  hold_min: number;
+  equity_after?: number;
+};
+type Book = {
+  id: string;
+  title: string;
+  headline: string;
+  start_usdt: number;
+  sept_end_equity: number;
+  pnl: number;
+  taken: number;
+  eligible: number;
+  signals: number;
+  win_rate: number | null;
+  maxdd_realized: number;
+  min_equity: number;
+  rules: string[];
+  note: string;
+  skipped: Record<string, number>;
+  curve: { tp: string; equity: number }[];
+  trades: Trade[];
+};
+type Opt = { disclaimer: string; fees: string; sept_signals: number; books: Book[] };
+type OldFill = { reason: string; px: number; qty: number; pnl: number; tp: string };
+type OldTrade = {
   symbol: string;
   signal_tp: string;
   entry_tp: string;
@@ -13,9 +45,9 @@ type Trade = {
   pnl: number;
   r: number | null;
   reasons: string;
-  fills: Fill[];
+  fills: OldFill[];
 };
-type Sim = {
+type OldSim = {
   disclaimer: string;
   start_usdt: number;
   risk_pct: number;
@@ -27,41 +59,34 @@ type Sim = {
   skipped: Record<string, number>;
   sept_end_equity: number;
   sept_pnl: number;
-  sept_trades: number;
-  final_equity: number;
-  final_tp: string | null;
   win_rate: number | null;
   avg_r: number | null;
   expectancy_usdt: number | null;
   curve: { tp: string; equity: number }[];
-  trades: Trade[];
+  trades: OldTrade[];
   note: string;
+  final_tp: string | null;
+  final_equity: number;
 };
 
 function money(n: number) {
   const sign = n > 0 ? "+" : "";
   return (n > 0 ? sign : "") + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+function px(n: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+}
+function pct(n: number | null) {
+  if (n == null) return "—";
+  return `${(n * 100).toFixed(1)}%`;
+}
 
-export function SimBoard() {
-  const [data, setData] = useState<Sim | null>(null);
-  const [err, setErr] = useState("");
-  useEffect(() => {
-    fetch("/data/paper_sim.json")
-      .then((r) => {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json() as Promise<Sim>;
-      })
-      .then(setData)
-      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "讀取失敗"));
-  }, []);
-  if (err) return <p className="err">模擬讀不到：{err}</p>;
-  if (!data) return <p className="note">讀取模擬…</p>;
+function Curve({ pts, start, color }: { pts: { equity: number }[]; start: number; color: string }) {
   const w = 640;
   const h = 180;
-  const pts = data.curve;
-  const min = Math.min(...pts.map((p) => p.equity), data.start_usdt);
-  const max = Math.max(...pts.map((p) => p.equity), data.start_usdt);
+  if (!pts.length) return null;
+  const min = Math.min(...pts.map((p) => p.equity), start);
+  const max = Math.max(...pts.map((p) => p.equity), start);
   const span = Math.max(1e-6, max - min);
   const d = pts
     .map((p, i) => {
@@ -70,66 +95,171 @@ export function SimBoard() {
       return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
-  const pnlCls = data.sept_pnl >= 0 ? "up" : "dn";
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="180" role="img" aria-label="權益曲線">
+      <path d={d} fill="none" stroke={color} strokeWidth="2" />
+    </svg>
+  );
+}
+
+function BookView({ book, color }: { book: Book; color: string }) {
+  const pnlCls = book.pnl >= 0 ? "up" : "dn";
+  const skips = Object.entries(book.skipped).sort((a, b) => b[1] - a[1]);
   return (
     <section>
-      <div className="banner">{data.disclaimer}</div>
+      <h2>{book.title}</h2>
+      <p className="note">{book.headline}</p>
       <div className="cards">
-        <div className="card"><b>1000</b><span>起始 USDT</span><em>2026-09-01 起</em></div>
-        <div className="card"><b className={pnlCls}>{data.sept_end_equity.toFixed(2)}</b><span>9 月 30 日權益</span><em>{money(data.sept_pnl)} USDT</em></div>
-        <div className="card"><b>{data.taken}</b><span>有做的單</span><em>跳過 {data.skipped_n} / {data.signals_seen}</em></div>
-        <div className="card"><b>{data.win_rate == null ? "—" : `${(data.win_rate * 100).toFixed(1)}%`}</b><span>勝率</span><em>平均 {data.avg_r ?? "—"} R</em></div>
-        <div className="card"><b>{data.expectancy_usdt == null ? "—" : money(data.expectancy_usdt)}</b><span>每筆期望 USDT</span><em>風險 {data.risk_pct}% · 槓桿 ≤ {data.leverage_cap}x</em></div>
+        <div className="card"><b>1000</b><span>起始 USDT</span><em>2026-09 鎖定訊號</em></div>
+        <div className="card"><b className={pnlCls}>{book.sept_end_equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b><span>9 月底權益</span><em>{money(book.pnl)} USDT</em></div>
+        <div className="card"><b>{book.taken}</b><span>有做的單</span><em>可做 {book.eligible} / 訊號 {book.signals}</em></div>
+        <div className="card"><b>{pct(book.win_rate)}</b><span>勝率</span><em>已實現回撤 {pct(book.maxdd_realized)}</em></div>
+        <div className="card"><b>{book.min_equity.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b><span>期間最低權益</span><em>平倉時計算</em></div>
       </div>
-      <h2>權益</h2>
-      <svg viewBox={`0 0 ${w} ${h}`} width="100%" height="180" role="img" aria-label="權益曲線">
-        <path d={d} fill="none" stroke="#e4b15a" strokeWidth="2" />
-      </svg>
-      <p className="note">{data.note} 最後一筆出場 {data.final_tp}，帳戶 {data.final_equity.toFixed(2)} USDT。10 月的訊號若沒通過當下濾網，就不會做。</p>
-      <h2>規則（下單前就定死）</h2>
+      <Curve pts={book.curve} start={book.start_usdt} color={color} />
+      <p className="note">{book.note}</p>
+      <h3>規則</h3>
       <ul className="note">
-        {data.rules.map((r) => <li key={r}>{r}</li>)}
+        {book.rules.map((r) => <li key={r}>{r}</li>)}
       </ul>
-      <h2>為什麼沒做</h2>
-      <div className="scroll">
-        <table>
-          <thead><tr><th className="left">原因</th><th>筆數</th></tr></thead>
-          <tbody>
-            {Object.entries(data.skipped).sort((a, b) => b[1] - a[1]).map(([k, n]) => (
-              <tr key={k}><td className="left">{k}</td><td>{n}</td></tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <h2>成交明細</h2>
+      {skips.length > 0 && (
+        <>
+          <h3>沒做的原因</h3>
+          <div className="scroll">
+            <table>
+              <thead><tr><th className="left">原因</th><th>筆數</th></tr></thead>
+              <tbody>
+                {skips.map(([k, n]) => (
+                  <tr key={k}><td className="left">{k}</td><td>{n}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+      <h3>成交明細</h3>
       <div className="scroll">
         <table>
           <thead>
             <tr>
-              <th className="left">進場（台北）</th>
+              <th className="left">訊號（台北）</th>
               <th className="left">幣</th>
               <th>進場價</th>
-              <th>止損</th>
+              <th>出場價</th>
               <th className="left">出場</th>
-              <th>損益 USDT</th>
-              <th>R</th>
+              <th>名義</th>
+              <th>損益</th>
             </tr>
           </thead>
           <tbody>
-            {data.trades.map((t) => (
-              <tr key={t.symbol + t.entry_tp}>
-                <td className="left">{t.entry_tp}</td>
+            {book.trades.map((t) => (
+              <tr key={t.symbol + t.signal_tp}>
+                <td className="left">{t.signal_tp}</td>
                 <td className="left">{t.symbol}</td>
-                <td>{t.entry}</td>
-                <td>{t.stop}</td>
-                <td className="left">{t.exit_tp} · {t.reasons}</td>
+                <td>{px(t.entry)}</td>
+                <td>{px(t.exit)}</td>
+                <td className="left">{t.exit_tp} · {t.reason} · {t.hold_min} 分</td>
+                <td>{t.notional.toLocaleString("en-US", { maximumFractionDigits: 2 })}</td>
                 <td className={t.pnl >= 0 ? "up" : "dn"}>{money(t.pnl)}</td>
-                <td className={t.pnl >= 0 ? "up" : "dn"}>{t.r}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
     </section>
+  );
+}
+
+export function SimBoard() {
+  const [opt, setOpt] = useState<Opt | null>(null);
+  const [old, setOld] = useState<OldSim | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    Promise.all([
+      fetch("/data/sept_opt_sim.json").then((r) => {
+        if (!r.ok) throw new Error("優化模擬 HTTP " + r.status);
+        return r.json() as Promise<Opt>;
+      }),
+      fetch("/data/paper_sim.json").then((r) => {
+        if (!r.ok) throw new Error("原模擬 HTTP " + r.status);
+        return r.json() as Promise<OldSim>;
+      }),
+    ])
+      .then(([a, b]) => {
+        setOpt(a);
+        setOld(b);
+      })
+      .catch((e: unknown) => setErr(e instanceof Error ? e.message : "讀取失敗"));
+  }, []);
+  if (err) return <p className="err">模擬讀不到：{err}</p>;
+  if (!opt || !old) return <p className="note">讀取模擬…</p>;
+  const colors = ["#e4b15a", "#7dcea0"];
+  return (
+    <>
+      <div className="banner">{opt.disclaimer}</div>
+      <p className="note">{opt.fees} 九月鎖定訊號 {opt.sept_signals} 筆。</p>
+      {opt.books.map((b, i) => (
+        <BookView key={b.id} book={b} color={colors[i] ?? "#e4b15a"} />
+      ))}
+      <section>
+        <h2>原先的當下選樣（不是九月最佳化）</h2>
+        <p className="note">
+          這套在看九月結果之前就定好：只做 ATR、轉強、前 24 小時與資金費過關，而且訊號後 3 根 1 分還站得住的單。每筆風險 0.75% 權益，槓桿不超過 3 倍。保留在這裡，避免被上面兩套事後挑出來的數字蓋掉。
+        </p>
+        <div className="cards">
+          <div className="card"><b>1000</b><span>起始 USDT</span><em>2026-09-01 起</em></div>
+          <div className="card"><b className={old.sept_pnl >= 0 ? "up" : "dn"}>{old.sept_end_equity.toFixed(2)}</b><span>9 月 30 日權益</span><em>{money(old.sept_pnl)} USDT</em></div>
+          <div className="card"><b>{old.taken}</b><span>有做的單</span><em>跳過 {old.skipped_n} / {old.signals_seen}</em></div>
+          <div className="card"><b>{pct(old.win_rate)}</b><span>勝率</span><em>平均 {old.avg_r ?? "—"} R</em></div>
+          <div className="card"><b>{old.expectancy_usdt == null ? "—" : money(old.expectancy_usdt)}</b><span>每筆期望 USDT</span><em>風險 {old.risk_pct}% · 槓桿 ≤ {old.leverage_cap}x</em></div>
+        </div>
+        <Curve pts={old.curve} start={old.start_usdt} color="#8ab4f8" />
+        <p className="note">{old.note} 最後一筆出場 {old.final_tp}，帳戶 {old.final_equity.toFixed(2)} USDT。</p>
+        <h3>規則（下單前就定死）</h3>
+        <ul className="note">
+          {old.rules.map((r) => <li key={r}>{r}</li>)}
+        </ul>
+        <h3>為什麼沒做</h3>
+        <div className="scroll">
+          <table>
+            <thead><tr><th className="left">原因</th><th>筆數</th></tr></thead>
+            <tbody>
+              {Object.entries(old.skipped).sort((a, b) => b[1] - a[1]).map(([k, n]) => (
+                <tr key={k}><td className="left">{k}</td><td>{n}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <h3>成交明細</h3>
+        <div className="scroll">
+          <table>
+            <thead>
+              <tr>
+                <th className="left">進場（台北）</th>
+                <th className="left">幣</th>
+                <th>進場價</th>
+                <th>止損</th>
+                <th className="left">出場</th>
+                <th>損益 USDT</th>
+                <th>R</th>
+              </tr>
+            </thead>
+            <tbody>
+              {old.trades.map((t) => (
+                <tr key={t.symbol + t.entry_tp}>
+                  <td className="left">{t.entry_tp}</td>
+                  <td className="left">{t.symbol}</td>
+                  <td>{px(t.entry)}</td>
+                  <td>{px(t.stop)}</td>
+                  <td className="left">{t.exit_tp} · {t.reasons}</td>
+                  <td className={t.pnl >= 0 ? "up" : "dn"}>{money(t.pnl)}</td>
+                  <td className={t.pnl >= 0 ? "up" : "dn"}>{t.r}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </>
   );
 }
