@@ -99,7 +99,7 @@ export function LockedBoard() {
       cur.n += 1;
       map.set(s.symbol, cur);
     }
-    return [...map.entries()].sort((a, b) => b[1].n - a[1].n || a[0].localeCompare(b[0]));
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "en", { sensitivity: "base" }));
   }, [data]);
 
   const filtered = useMemo(() => {
