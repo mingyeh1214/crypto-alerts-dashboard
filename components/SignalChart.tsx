@@ -316,6 +316,11 @@ export function SignalChart({
         lastValueVisible: false,
         crosshairMarkerVisible: false,
       });
+      // Keep the main price pane readable for low-priced contracts. The
+      // precision and minMove together make the price scale/crosshair show
+      // exactly six decimal places instead of auto-rounding the values.
+      const mainPriceFormat = { type: "price" as const, precision: 6, minMove: 0.000001 };
+      const mainLineOpts = (color: string) => ({ ...lineOpts(color), priceFormat: mainPriceFormat });
       const candle = chart.addSeries(lc.CandlestickSeries, {
         upColor: UP,
         downColor: DN,
@@ -323,10 +328,11 @@ export function SignalChart({
         borderDownColor: DN,
         wickUpColor: UP,
         wickDownColor: DN,
+        priceFormat: mainPriceFormat,
       });
-      const ema9 = chart.addSeries(lc.LineSeries, lineOpts(EMA9));
-      const ema21 = chart.addSeries(lc.LineSeries, lineOpts(EMA21));
-      const ema55 = chart.addSeries(lc.LineSeries, lineOpts(EMA55));
+      const ema9 = chart.addSeries(lc.LineSeries, mainLineOpts(EMA9));
+      const ema21 = chart.addSeries(lc.LineSeries, mainLineOpts(EMA21));
+      const ema55 = chart.addSeries(lc.LineSeries, mainLineOpts(EMA55));
       const volume = chart.addSeries(
         lc.HistogramSeries,
         { priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false },
