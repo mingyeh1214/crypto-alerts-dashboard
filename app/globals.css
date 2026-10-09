@@ -330,3 +330,5 @@ th.sortable.on .sort-ind { opacity: 1; }
 td > .mt-tag:first-child { margin-left: 0; }
 .mt-tag.both { color: #7fc8a9; border-color: rgba(127, 200, 169, 0.45); }
 .mt-tag.perp { color: #a9a3d9; border-color: rgba(169, 163, 217, 0.45); }
+
+[hidden] { display: none !important; }
