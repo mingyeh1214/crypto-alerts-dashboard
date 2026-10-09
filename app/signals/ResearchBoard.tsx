@@ -512,8 +512,6 @@ export function ResearchBoard() {
                   <SortTh k="rvol" label="相對量" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="taker" label="主動買賣比" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="oi" label="未平倉變化" sort={sigSort} onSort={onSigSort} />
-                  <SortTh k="p" label="觀察窗 p" sort={sigSort} onSort={onSigSort} />
-                  <SortTh k="status" label="狀態" sort={sigSort} onSort={onSigSort} num={false} />
                   <SortTh k="r4h" label="事後 4h" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="tg" label="Telegram" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="src" label="來源" sort={sigSort} onSort={onSigSort} num={false} />
@@ -528,7 +526,7 @@ export function ResearchBoard() {
                     className={r.symbol === coin && r.closeMs === focus ? "on" : ""}
                   >
                     <td style={{ whiteSpace: "nowrap" }}>{short(r.closeMs)}</td>
-                    <td>{r.symbol}{r.source === "manual" ? <span className="sym"> 手冊</span> : null}</td>
+                    <td>{r.symbol}{r.status !== "passed" ? <span className={`st-tag ${r.status}`} title={r.reason || ""}>{STATUS_LABEL[r.status]}</span> : null}</td>
                     <td>{(() => { const mt = marketType(r.symbol); return mt ? <span className={`mt-tag ${mt}`}>{MARKET_LABEL[mt]}</span> : "—"; })()}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{(() => { const o = ordinals.get(ordKey(r)); return o ? <><b>{o.n}</b><span className="sym"> / {o.of}</span></> : "—"; })()}</td>
                     <td>{r.close == null ? "—" : r.close.toPrecision(6)}</td>
@@ -536,15 +534,13 @@ export function ResearchBoard() {
                     <td>{r.rvol == null ? "—" : r.rvol.toFixed(1)}</td>
                     <td>{r.taker == null ? "—" : r.taker.toFixed(3)}</td>
                     <td className={cls(r.oiChg)}>{pct(r.oiChg)}</td>
-                    <td>{r.obsP == null ? "—" : r.obsP.toFixed(4)}</td>
-                    <td title={r.reason || ""} style={{ color: MARK_COLOR[r.status] }}>{STATUS_LABEL[r.status]}</td>
                     <td className={cls(r.r4h)}>{pct(r.r4h)}</td>
                     <td>{r.telegram ? "已送" : "—"}</td>
                     <td className="sym">{r.source === "live" ? "線上" : "回測"}</td>
                   </tr>
                 ))}
                 {shown.length === 0 ? (
-                  <tr><td colSpan={14} className="note">沒有符合的訊號。</td></tr>
+                  <tr><td colSpan={12} className="note">沒有符合的訊號。</td></tr>
                 ) : null}
               </tbody>
             </table>

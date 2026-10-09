@@ -332,3 +332,5 @@ td > .mt-tag:first-child { margin-left: 0; }
 .mt-tag.perp { color: #a9a3d9; border-color: rgba(169, 163, 217, 0.45); }
 
 [hidden] { display: none !important; }
+.st-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 6px; font-size: 0.7rem; line-height: 1.5; color: #7fa6d9; background: rgba(127, 166, 217, 0.12); white-space: nowrap; }
+.st-tag.error { color: var(--muted, #8b98a8); background: rgba(139, 152, 168, 0.12); }
