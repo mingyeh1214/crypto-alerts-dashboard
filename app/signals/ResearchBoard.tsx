@@ -47,6 +47,7 @@ const SIGNAL_SORT: Record<string, (r: Burst) => number | string | null | undefin
   r4h: (r) => r.r4h,
   tg: (r) => (r.telegram ? 1 : 0),
 };
+const ordKey = (r: Burst) => `${r.symbol}|${r.closeMs}`;
 const COUNT_SORT: Record<string, (r: CoinCount) => number | string | null> = {
   symbol: (r) => r.s,
   livePassed: (r) => r.livePassed,
@@ -273,10 +274,28 @@ export function ResearchBoard() {
   };
 
   const rows = tab === "live" ? live : tab === "backtest" ? bt : null;
+  // Per-coin ordinal: backtest + live merged, deduped on (symbol, bar close), chronological from 1.
+  const ordinals = useMemo(() => {
+    const bySym = new Map<string, Set<number>>();
+    for (const r of [...(bt || []), ...(live || [])]) {
+      let set = bySym.get(r.symbol);
+      if (!set) bySym.set(r.symbol, (set = new Set()));
+      set.add(r.closeMs);
+    }
+    const m = new Map<string, { n: number; of: number }>();
+    for (const [sym, set] of bySym) {
+      const ts = [...set].sort((a, b) => a - b);
+      ts.forEach((t, i) => m.set(`${sym}|${t}`, { n: i + 1, of: ts.length }));
+    }
+    return m;
+  }, [bt, live]);
+  const sigSortFn = (k: string) => (k === "ord" ? (r: Burst) => ordinals.get(ordKey(r))?.n : SIGNAL_SORT[k] ?? SIGNAL_SORT.time);
+
   const filtered = useMemo(() => {
     const xs = (rows || []).filter((r) => (status === "all" || r.status === status) && (!listCoin || r.symbol === listCoin));
-    return sortBy(xs, SIGNAL_SORT[sigSort.key] ?? SIGNAL_SORT.time, sigSort.dir);
-  }, [rows, status, listCoin, sigSort]);
+    return sortBy(xs, sigSortFn(sigSort.key), sigSort.dir);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, status, listCoin, sigSort, ordinals]);
 
   // Per-coin counts (failed rows are already excluded at the source).
   const counts: CoinCount[] = useMemo(() => {
@@ -476,6 +495,7 @@ export function ResearchBoard() {
                 <tr>
                   <SortTh k="time" label="爆量收盤（台北）" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="symbol" label="幣別" sort={sigSort} onSort={onSigSort} num={false} />
+                  <SortTh k="ord" label="該幣第幾筆" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="close" label="收盤價" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="ret" label="漲幅" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="rvol" label="相對量" sort={sigSort} onSort={onSigSort} />
@@ -496,6 +516,7 @@ export function ResearchBoard() {
                   >
                     <td style={{ whiteSpace: "nowrap" }}>{short(r.closeMs)}</td>
                     <td>{r.symbol}{r.source === "manual" ? <span className="sym"> 手冊</span> : null}</td>
+                    <td style={{ whiteSpace: "nowrap" }}>{(() => { const o = ordinals.get(ordKey(r)); return o ? <><b>{o.n}</b><span className="sym"> / {o.of}</span></> : "—"; })()}</td>
                     <td>{r.close == null ? "—" : r.close.toPrecision(6)}</td>
                     <td className={cls(r.ret)}>{pct(r.ret)}</td>
                     <td>{r.rvol == null ? "—" : r.rvol.toFixed(1)}</td>
@@ -507,7 +528,7 @@ export function ResearchBoard() {
                   </tr>
                 ))}
                 {shown.length === 0 ? (
-                  <tr><td colSpan={10} className="note">沒有符合的訊號。</td></tr>
+                  <tr><td colSpan={11} className="note">沒有符合的訊號。</td></tr>
                 ) : null}
               </tbody>
             </table>
