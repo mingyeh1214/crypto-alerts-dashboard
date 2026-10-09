@@ -57,7 +57,7 @@ export const isShown = (s: SignalStatus) => s !== "failed";
 export const MARK_COLOR: Record<SignalStatus, string> = {
   passed: "#3cbe88",
   failed: "#e36d6d",
-  pending: "#e3b341",
+  pending: "#7fa6d9", // blue-grey, so no orange/amber marker is ever drawn on the chart
   error: "#8b97a8",
 };
 

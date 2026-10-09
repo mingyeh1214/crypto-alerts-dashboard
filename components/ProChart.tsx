@@ -295,6 +295,8 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
     const byBar = new Map<number, Burst[]>();
     const marks: SeriesMarker<Time>[] = [];
     for (const s of signals) {
+      // Only passed and still-pending signals get markers (no failed / insufficient-data ones).
+      if (s.status !== "passed" && s.status !== "pending") continue;
       const bb = barOf(s.closeMs - 1, step);
       const db = barOf(s.closeMs + 3 * M5 - 1, step);
       if (!idx.has(bb)) continue;
