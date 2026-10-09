@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CoinPicker, type CoinInfo } from "@/components/CoinPicker";
+import { computeOutcomes, type Outcome } from "@/lib/outcomes";
 import { INTERVALS, ProChart, type Interval, type Market } from "@/components/ProChart";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
 import { num, pct, taipei } from "@/lib/format";
@@ -49,7 +50,8 @@ const SIGNAL_SORT: Record<string, (r: Burst) => number | string | null | undefin
   oi: (r) => r.oiChg,
   p: (r) => r.obsP,
   status: (r) => STATUS_LABEL[r.status],
-  r4h: (r) => r.r4h,
+  a1: (r) => r.out?.a1, u1: (r) => r.out?.u1, d1: (r) => r.out?.d1,
+  a4: (r) => r.out?.a4, u4: (r) => r.out?.u4, d4: (r) => r.out?.d4,
   tg: (r) => (r.telegram ? 1 : 0),
   src: (r) => (r.source === "live" ? "線上" : "回測"),
   mt: (r) => MT_SORT(r.symbol),
@@ -80,10 +82,31 @@ function sortBy<T>(xs: T[], get: (x: T) => number | string | null | undefined, d
     .map((o) => o.x);
 }
 
-function SortTh({ k, label, sort, onSort, num: numeric = true }: { k: string; label: string; sort: Sort; onSort: (k: string, numeric: boolean) => void; num?: boolean }) {
+const OUT_TIP = "從警報時間（判斷 K 收盤＝爆量收盤＋15 分）的合約 5 分 K 收盤價起算，和整體回測相同；最大漲幅／跌幅用窗內 5 分 K 的最高／最低價。窗還沒走完的顯示目前數字並標「進行中」。";
+
+function OutCells({ o }: { o?: Outcome }) {
+  const cell = (v: number | null | undefined, f: boolean | undefined, k: string) => (
+    <td key={k} className={cls(v)} style={{ whiteSpace: "nowrap" }} title={v != null && !f ? "進行中：窗還沒走完" : undefined}>
+      {pct(v ?? null)}
+      {v != null && !f ? <span className="sym"> 進行中</span> : null}
+    </td>
+  );
+  return (
+    <>
+      {cell(o?.a1, o?.f1, "a1")}
+      {cell(o?.u1, o?.f1, "u1")}
+      {cell(o?.d1, o?.f1, "d1")}
+      {cell(o?.a4, o?.f4, "a4")}
+      {cell(o?.u4, o?.f4, "u4")}
+      {cell(o?.d4, o?.f4, "d4")}
+    </>
+  );
+}
+
+function SortTh({ k, label, sort, onSort, num: numeric = true, title }: { k: string; label: string; sort: Sort; onSort: (k: string, numeric: boolean) => void; num?: boolean; title?: string }) {
   const on = sort.key === k;
   return (
-    <th className={`sortable${on ? " on" : ""}`} onClick={() => onSort(k, numeric)} aria-sort={on ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
+    <th title={title} className={`sortable${on ? " on" : ""}`} onClick={() => onSort(k, numeric)} aria-sort={on ? (sort.dir === 1 ? "ascending" : "descending") : "none"}>
       {label}
       <span className="sort-ind">{on ? (sort.dir === 1 ? "▲" : "▼") : "↕"}</span>
     </th>
@@ -191,16 +214,51 @@ export function ResearchBoard() {
       });
   }, []);
 
+  // 1h / 4h outcomes for rows the backtest file has not finished (live rows, recent backtest rows).
+  const [outs, setOuts] = useState<Map<string, Outcome>>(new Map());
+  const outTick = useRef(0);
+  const [outClock, setOutClock] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setOutClock((x) => x + 1), 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const needKey = useMemo(() => {
+    const xs = [...(bt || []), ...(live || [])].filter((r) => !(r.out?.f1 && r.out?.f4) && Date.now() - r.closeMs < 30 * 86400_000);
+    return JSON.stringify(xs.map((r) => [r.key, r.symbol, r.closeMs]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bt, live, outClock]);
+  useEffect(() => {
+    const items = JSON.parse(needKey) as [string, string, number][];
+    const todo = items.filter(([k]) => !(outs.get(k)?.f1 && outs.get(k)?.f4));
+    if (!todo.length) return;
+    const tick = ++outTick.current;
+    computeOutcomes(todo).then((m) => {
+      if (tick !== outTick.current) return;
+      setOuts((prev) => {
+        const n = new Map(prev);
+        for (const [k, v] of m) n.set(k, v);
+        return n;
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needKey]);
+  const withOut = useCallback((r: Burst): Burst => {
+    if (r.out?.f1 && r.out?.f4) return r;
+    const o = outs.get(r.key);
+    return o ? { ...r, out: o } : r;
+  }, [outs]);
+
   // Every signal per coin (live wins over a backtest row at the same bar).
   const byCoin = useMemo(() => {
     const m = new Map<string, Map<number, Burst>>();
-    for (const r of [...(bt || []), ...(live || [])]) {
+    for (const r0 of [...(bt || []), ...(live || [])]) {
+      const r = withOut(r0);
       const mm = m.get(r.symbol) ?? new Map<number, Burst>();
       mm.set(r.closeMs, r);
       m.set(r.symbol, mm);
     }
     return m;
-  }, [live, bt]);
+  }, [live, bt, withOut]);
   const coins: CoinInfo[] = useMemo(() => {
     const liveSet = new Set((live || []).map((r) => r.symbol));
     return [...byCoin.entries()].map(([s, m]) => ({
@@ -309,7 +367,7 @@ export function ResearchBoard() {
     for (const [s, mm] of byCoin) {
       seen.add(s);
       const xs = [...mm.values()];
-      const r = xs.filter((x) => x.status === "passed" && x.r4h != null).map((x) => x.r4h as number).sort((a, b) => a - b);
+      const r = xs.filter((x) => x.status === "passed" && x.out?.f4 && x.out.a4 != null).map((x) => x.out!.a4 as number).sort((a, b) => a - b);
       out.push({
         s,
         mt: marketType(s),
@@ -338,7 +396,7 @@ export function ResearchBoard() {
   const stats = useMemo(() => {
     const all = (rows || []).filter((r) => !listCoin || r.symbol === listCoin);
     const passed = all.filter((r) => r.status === "passed");
-    const withR = passed.map((r) => r.r4h).filter((x): x is number => x != null);
+    const withR = passed.filter((r) => r.out?.f4).map((r) => r.out!.a4).filter((x): x is number => x != null);
     const up = withR.filter((x) => x > 0).length;
     const sorted = [...withR].sort((a, b) => a - b);
     const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
@@ -445,7 +503,7 @@ export function ResearchBoard() {
       <div className="cards" style={{ margin: "10px 0 14px" }}>
         <div className="card"><b>{num(stats.total)}</b><span>訊號（通過＋觀察中）</span><em>{num(stats.symbols)} 個幣 · 不含未過</em></div>
         <div className="card"><b>{num(stats.passed)}</b><span>第二層通過</span><em>會發 Telegram · 觀察中 {num(stats.pending)}</em></div>
-        <div className="card"><b>{stats.n4h ? `${Math.round((stats.up / stats.n4h) * 100)}%` : "—"}</b><span>通過後 4 小時上漲</span><em>{num(stats.n4h)} 筆有事後 4h 資料</em></div>
+        <div className="card"><b>{stats.n4h ? `${Math.round((stats.up / stats.n4h) * 100)}%` : "—"}</b><span>通過後 4 小時上漲</span><em>{num(stats.n4h)} 筆 4h 已走完 · 從警報時間起算</em></div>
         <div className="card"><b className={cls(stats.med)}>{pct(stats.med)}</b><span>通過後 4 小時中位數</span><em>只作對照</em></div>
       </div>
       )}
@@ -512,7 +570,12 @@ export function ResearchBoard() {
                   <SortTh k="rvol" label="相對量" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="taker" label="主動買賣比" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="oi" label="未平倉變化" sort={sigSort} onSort={onSigSort} />
-                  <SortTh k="r4h" label="事後 4h" sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="a1" label="1h 漲跌" title={OUT_TIP} sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="u1" label="1h 內最大漲幅" title={OUT_TIP} sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="d1" label="1h 內最大跌幅" title={OUT_TIP} sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="a4" label="4h 漲跌" title={OUT_TIP} sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="u4" label="4h 內最大漲幅" title={OUT_TIP} sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="d4" label="4h 內最大跌幅" title={OUT_TIP} sort={sigSort} onSort={onSigSort} />
                   <SortTh k="tg" label="Telegram" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="src" label="來源" sort={sigSort} onSort={onSigSort} num={false} />
                 </tr>
@@ -534,13 +597,13 @@ export function ResearchBoard() {
                     <td>{r.rvol == null ? "—" : r.rvol.toFixed(1)}</td>
                     <td>{r.taker == null ? "—" : r.taker.toFixed(3)}</td>
                     <td className={cls(r.oiChg)}>{pct(r.oiChg)}</td>
-                    <td className={cls(r.r4h)}>{pct(r.r4h)}</td>
+                    <OutCells o={r.out} />
                     <td>{r.telegram ? "已送" : "—"}</td>
                     <td className="sym">{r.source === "live" ? "線上" : "回測"}</td>
                   </tr>
                 ))}
                 {shown.length === 0 ? (
-                  <tr><td colSpan={12} className="note">沒有符合的訊號。</td></tr>
+                  <tr><td colSpan={17} className="note">沒有符合的訊號。</td></tr>
                 ) : null}
               </tbody>
             </table>

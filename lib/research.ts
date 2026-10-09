@@ -1,5 +1,6 @@
 import SPOT_MAP from "./spot-map.json";
 import UNIVERSE from "./market-universe.json";
+import { fromTriples, type Outcome } from "./outcomes";
 
 /** Shared types and copy for the handover research rule. */
 
@@ -19,7 +20,8 @@ export type Burst = {
   status: SignalStatus;
   obsP: number | null;
   obsTrend?: number | null;
-  r4h?: number | null;
+  /** 1h / 4h outcome from the alert time (precomputed for finished backtest rows). */
+  out?: Outcome;
   source: "live" | "manual" | "oos";
   spotSymbol?: string | null;
   telegram?: boolean;
@@ -49,7 +51,8 @@ export type LiveRow = {
 
 export type BacktestRow = {
   s: string; t: string; c: number | null; r: number | null; v: number | null; k: number | null;
-  o: number | null; st: SignalStatus; p: number | null; h4: number | null; src: "manual" | "oos";
+  o: number | null; st: SignalStatus; p: number | null; src: "manual" | "oos";
+  o1?: (number | null)[] | null; o4?: (number | null)[] | null;
 };
 
 /** The site hides layer-2 failures (未過); the worker still records them for research. */
@@ -106,7 +109,7 @@ export function fromBacktest(r: BacktestRow, i: number): Burst {
     oiChg: r.o,
     status: r.st,
     obsP: r.p,
-    r4h: r.h4,
+    out: fromTriples(r.o1, r.o4),
     source: r.src,
   };
 }

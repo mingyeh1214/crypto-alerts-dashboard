@@ -408,7 +408,7 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
           `<div>爆量收盤 ${taipeiStr(s.closeMs / 1000)}</div>` +
           `<div>漲幅 ${fmtPct(s.ret)} · 相對量 ${s.rvol == null ? "—" : s.rvol.toFixed(1)}</div>` +
           `<div>主動買賣比 ${s.taker == null ? "—" : s.taker.toFixed(3)} · 未平倉 ${fmtPct(s.oiChg)}</div>` +
-          `<div>觀察窗 p ${s.obsP == null ? "—" : s.obsP.toFixed(4)}${s.r4h != null ? ` · 事後4h ${fmtPct(s.r4h)}` : ""}</div>`,
+          `<div>觀察窗 p ${s.obsP == null ? "—" : s.obsP.toFixed(4)}${s.out?.a4 != null ? ` · 4h ${fmtPct(s.out.a4)}${s.out.f4 ? "" : "（進行中）"}` : ""}</div>`,
       )
       .join('<hr/>');
     const host = hostRef.current;
