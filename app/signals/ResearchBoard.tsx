@@ -10,6 +10,10 @@ import {
   STATUS_LABEL,
   isShown,
   spotOf,
+  marketType,
+  MARKET_LABEL,
+  ALL_PERPS,
+  type MarketType,
   fromBacktest,
   fromLive,
   type BacktestRow,
@@ -21,18 +25,19 @@ import {
 const POLL_MS = 30_000;
 const PAGE = 50;
 
-type Tab = "live" | "backtest" | "counts";
+type Tab = "signals" | "counts";
 type Sort = { key: string; dir: 1 | -1 };
 type CoinCount = {
   s: string;
-  livePassed: number;
-  livePending: number;
-  btPassed: number;
+  mt: MarketType | null;
+  passed: number;
+  pending: number;
   total: number;
   lastMs: number;
   avg4h: number | null;
   med4h: number | null;
 };
+const MT_SORT = (s: string) => (marketType(s) === "both" ? 0 : marketType(s) === "perp" ? 1 : 2);
 
 const SIGNAL_SORT: Record<string, (r: Burst) => number | string | null | undefined> = {
   time: (r) => r.closeMs,
@@ -46,13 +51,15 @@ const SIGNAL_SORT: Record<string, (r: Burst) => number | string | null | undefin
   status: (r) => STATUS_LABEL[r.status],
   r4h: (r) => r.r4h,
   tg: (r) => (r.telegram ? 1 : 0),
+  src: (r) => (r.source === "live" ? "線上" : "回測"),
+  mt: (r) => MT_SORT(r.symbol),
 };
 const ordKey = (r: Burst) => `${r.symbol}|${r.closeMs}`;
 const COUNT_SORT: Record<string, (r: CoinCount) => number | string | null> = {
   symbol: (r) => r.s,
-  livePassed: (r) => r.livePassed,
-  livePending: (r) => r.livePending,
-  btPassed: (r) => r.btPassed,
+  mt: (r) => MT_SORT(r.s),
+  passed: (r) => r.passed,
+  pending: (r) => r.pending,
   total: (r) => r.total,
   last: (r) => r.lastMs,
   avg4h: (r) => r.avg4h,
@@ -108,7 +115,7 @@ const latest = (xs: Burst[]) => xs.reduce<Burst | null>((a, b) => (!a || b.close
 const short = (ms: number) => taipei(new Date(ms).toISOString()).replace(/:00 台北$/, "").replace(" 台北", "");
 
 export function ResearchBoard() {
-  const [tab, setTab] = useState<Tab>("live");
+  const [tab, setTab] = useState<Tab>("signals");
   const [live, setLive] = useState<Burst[] | null>(null);
   const [liveErr, setLiveErr] = useState<string | null>(null);
   const [bt, setBt] = useState<Burst[] | null>(null);
@@ -123,6 +130,8 @@ export function ResearchBoard() {
   const [allMode, setAllMode] = useState(false);
   const [sigSort, setSigSort] = useState<Sort>({ key: "time", dir: -1 });
   const [cntSort, setCntSort] = useState<Sort>({ key: "total", dir: -1 });
+  const [cntScope, setCntScope] = useState<"signals" | "all">("signals");
+  const [cntMt, setCntMt] = useState<"" | MarketType>("");
 
   // Shareable state: ?coin=GTCUSDT&iv=5m&mkt=futures&t=<burst close ms>&list=all
   useEffect(() => {
@@ -140,7 +149,7 @@ export function ResearchBoard() {
       setListCoin("");
     }
     const tab0 = q.get("tab");
-    if (tab0 === "backtest" || tab0 === "counts") setTab(tab0);
+    if (tab0 === "counts") setTab("counts");
     const tq = Number(q.get("t"));
     if (Number.isFinite(tq) && tq > 1.6e12) setFocusMs(tq);
     setUrlReady(true);
@@ -235,7 +244,7 @@ export function ResearchBoard() {
       if (focus != null) q.set("t", String(focus));
       if (!listCoin) q.set("list", "all");
     }
-    if (tab !== "live") q.set("tab", tab);
+    if (tab !== "signals") q.set("tab", tab);
     const url = `${window.location.pathname}?${q.toString()}`;
     if (url !== window.location.pathname + window.location.search) window.history.replaceState(null, "", url);
   }, [urlReady, coin, iv, mkt, focus, listCoin, allMode, tab]);
@@ -258,7 +267,7 @@ export function ResearchBoard() {
   };
   const openCoin = (s: string) => {
     pickCoin(s);
-    if (tab === "counts") setTab("backtest");
+    if (tab === "counts") setTab("signals");
     setTimeout(() => chartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
   const toggleSort = (set: (f: (s: Sort) => Sort) => void) => (k: string, numeric: boolean) => {
@@ -273,22 +282,18 @@ export function ResearchBoard() {
     setTimeout(() => chartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
   };
 
-  const rows = tab === "live" ? live : tab === "backtest" ? bt : null;
-  // Per-coin ordinal: backtest + live merged, deduped on (symbol, bar close), chronological from 1.
+  // One merged list: backtest + live, deduped on (symbol, bar close), live row wins (see byCoin).
+  const merged = useMemo(() => (live == null && bt == null ? null : [...byCoin.values()].flatMap((m) => [...m.values()])), [byCoin, live, bt]);
+  const rows = tab === "signals" ? merged : null;
+  // Per-coin ordinal over the merged list, chronological from 1.
   const ordinals = useMemo(() => {
-    const bySym = new Map<string, Set<number>>();
-    for (const r of [...(bt || []), ...(live || [])]) {
-      let set = bySym.get(r.symbol);
-      if (!set) bySym.set(r.symbol, (set = new Set()));
-      set.add(r.closeMs);
-    }
     const m = new Map<string, { n: number; of: number }>();
-    for (const [sym, set] of bySym) {
-      const ts = [...set].sort((a, b) => a - b);
+    for (const [sym, mm] of byCoin) {
+      const ts = [...mm.keys()].sort((a, b) => a - b);
       ts.forEach((t, i) => m.set(`${sym}|${t}`, { n: i + 1, of: ts.length }));
     }
     return m;
-  }, [bt, live]);
+  }, [byCoin]);
   const sigSortFn = (k: string) => (k === "ord" ? (r: Burst) => ordinals.get(ordKey(r))?.n : SIGNAL_SORT[k] ?? SIGNAL_SORT.time);
 
   const filtered = useMemo(() => {
@@ -297,46 +302,37 @@ export function ResearchBoard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, status, listCoin, sigSort, ordinals]);
 
-  // Per-coin counts (failed rows are already excluded at the source).
-  const counts: CoinCount[] = useMemo(() => {
-    const m = new Map<string, { lp: number; lq: number; bp: number; passed: Set<number>; last: number; r: number[] }>();
-    const get = (s: string) => {
-      let v = m.get(s);
-      if (!v) m.set(s, (v = { lp: 0, lq: 0, bp: 0, passed: new Set(), last: 0, r: [] }));
-      return v;
-    };
-    for (const r of live || []) {
-      const v = get(r.symbol);
-      if (r.status === "passed") {
-        v.lp += 1;
-        v.passed.add(r.closeMs);
-      } else if (r.status === "pending") v.lq += 1;
-      v.last = Math.max(v.last, r.closeMs);
-    }
-    for (const r of bt || []) {
-      const v = get(r.symbol);
-      if (r.status === "passed") {
-        v.bp += 1;
-        v.passed.add(r.closeMs);
-        if (r.r4h != null) v.r.push(r.r4h);
-      }
-      v.last = Math.max(v.last, r.closeMs);
-    }
-    const out = [...m.entries()].map(([s, v]) => {
-      const sorted = [...v.r].sort((a, b) => a - b);
-      return {
+  // Per-coin counts over the merged list (failed rows are excluded at the source).
+  const allCounts: CoinCount[] = useMemo(() => {
+    const out: CoinCount[] = [];
+    const seen = new Set<string>();
+    for (const [s, mm] of byCoin) {
+      seen.add(s);
+      const xs = [...mm.values()];
+      const r = xs.filter((x) => x.status === "passed" && x.r4h != null).map((x) => x.r4h as number).sort((a, b) => a - b);
+      out.push({
         s,
-        livePassed: v.lp,
-        livePending: v.lq,
-        btPassed: v.bp,
-        total: v.passed.size,
-        lastMs: v.last,
-        avg4h: sorted.length ? sorted.reduce((a, b) => a + b, 0) / sorted.length : null,
-        med4h: sorted.length ? sorted[Math.floor(sorted.length / 2)] : null,
-      };
-    });
-    return sortBy(out.filter((c) => c.total + c.livePending > 0), COUNT_SORT[cntSort.key] ?? COUNT_SORT.total, cntSort.dir);
-  }, [live, bt, cntSort]);
+        mt: marketType(s),
+        passed: xs.filter((x) => x.status === "passed").length,
+        pending: xs.filter((x) => x.status === "pending").length,
+        total: xs.length,
+        lastMs: Math.max(...mm.keys()),
+        avg4h: r.length ? r.reduce((a, b) => a + b, 0) / r.length : null,
+        med4h: r.length ? r[Math.floor(r.length / 2)] : null,
+      });
+    }
+    for (const s of ALL_PERPS) if (!seen.has(s)) out.push({ s, mt: marketType(s), passed: 0, pending: 0, total: 0, lastMs: 0, avg4h: null, med4h: null });
+    return out;
+  }, [byCoin]);
+  const counts = useMemo(
+    () =>
+      sortBy(
+        allCounts.filter((c) => (cntScope === "all" || c.total > 0) && (!cntMt || c.mt === cntMt)),
+        COUNT_SORT[cntSort.key] ?? COUNT_SORT.total,
+        cntSort.dir,
+      ),
+    [allCounts, cntScope, cntMt, cntSort],
+  );
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const shown = filtered.slice(page * PAGE, page * PAGE + PAGE);
   const stats = useMemo(() => {
@@ -346,9 +342,9 @@ export function ResearchBoard() {
     const up = withR.filter((x) => x > 0).length;
     const sorted = [...withR].sort((a, b) => a - b);
     const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
-    return { total: all.length, passed: passed.length, symbols: new Set(all.map((r) => r.symbol)).size, up, n4h: withR.length, med };
+    return { total: all.length, passed: passed.length, pending: all.filter((r) => r.status === "pending").length, live: all.filter((r) => r.source === "live").length, symbols: new Set(all.map((r) => r.symbol)).size, up, n4h: withR.length, med };
   }, [rows, listCoin]);
-  const err = tab === "live" ? liveErr : tab === "backtest" ? btErr : liveErr || btErr;
+  const err = [liveErr, btErr].filter(Boolean).join(" ") || null;
   const onSigSort = toggleSort(setSigSort);
   const onCntSort = toggleSort(setCntSort);
 
@@ -399,10 +395,28 @@ export function ResearchBoard() {
 
       <div className="toolbar">
         <div className="seg">
-          <button className={tab === "live" ? "on" : ""} onClick={() => { setTab("live"); setPage(0); }}>線上</button>
-          <button className={tab === "backtest" ? "on" : ""} onClick={() => { setTab("backtest"); setPage(0); }}>回測（9 月起）</button>
+          <button className={tab === "signals" ? "on" : ""} onClick={() => { setTab("signals"); setPage(0); }}>訊號列表</button>
           <button className={tab === "counts" ? "on" : ""} onClick={() => { setTab("counts"); setPage(0); }}>各幣訊號次數</button>
         </div>
+        {tab === "counts" ? (
+          <div className="toolbar-actions">
+            <label className="field inline">
+              幣別範圍
+              <select value={cntScope} onChange={(e) => { setCntScope(e.target.value as "signals" | "all"); setPage(0); }}>
+                <option value="signals">有訊號的幣</option>
+                <option value="all">全部幣（含 0 次）</option>
+              </select>
+            </label>
+            <label className="field inline">
+              市場
+              <select value={cntMt} onChange={(e) => { setCntMt(e.target.value as "" | MarketType); setPage(0); }}>
+                <option value="">全部</option>
+                <option value="both">現貨＋合約</option>
+                <option value="perp">只有合約</option>
+              </select>
+            </label>
+          </div>
+        ) : null}
         <div className="toolbar-actions" hidden={tab === "counts"}>
           <label className="field inline">
             狀態
@@ -422,21 +436,17 @@ export function ResearchBoard() {
 
       {tab === "counts" ? (
         <div className="cards" style={{ margin: "10px 0 14px" }}>
-          <div className="card"><b>{num(counts.length)}</b><span>有訊號的幣</span><em>不含只有未過的幣</em></div>
-          <div className="card"><b>{num(counts.reduce((a, c) => a + c.total, 0))}</b><span>通過次數合計</span><em>線上＋回測</em></div>
-          <div className="card"><b>{num(counts.reduce((a, c) => a + c.livePassed, 0))}</b><span>線上通過</span><em>worker 上線後</em></div>
-          <div className="card"><b>{num(counts.reduce((a, c) => a + c.btPassed, 0))}</b><span>回測通過</span><em>9 月起</em></div>
+          <div className="card"><b>{num(allCounts.filter((c) => c.total > 0).length)}</b><span>有訊號的幣</span><em>不含只有未過的幣</em></div>
+          <div className="card"><b>{num(allCounts.reduce((a, c) => a + c.total, 0))}</b><span>訊號合計</span><em>通過 {num(allCounts.reduce((a, c) => a + c.passed, 0))} · 觀察中 {num(allCounts.reduce((a, c) => a + c.pending, 0))}</em></div>
+          <div className="card"><b>{num(allCounts.filter((c) => c.mt === "both").length)}</b><span>現貨＋合約</span><em>{num(allCounts.filter((c) => c.mt === "both" && c.total > 0).length)} 個有訊號</em></div>
+          <div className="card"><b>{num(allCounts.filter((c) => c.mt === "perp").length)}</b><span>只有合約</span><em>{num(allCounts.filter((c) => c.mt === "perp" && c.total > 0).length)} 個有訊號 · 規則需要現貨資料</em></div>
         </div>
       ) : (
       <div className="cards" style={{ margin: "10px 0 14px" }}>
         <div className="card"><b>{num(stats.total)}</b><span>訊號（通過＋觀察中）</span><em>{num(stats.symbols)} 個幣 · 不含未過</em></div>
-        <div className="card"><b>{num(stats.passed)}</b><span>第二層通過</span><em>會發 Telegram</em></div>
-        {tab === "backtest" ? (
-          <>
-            <div className="card"><b>{stats.n4h ? `${Math.round((stats.up / stats.n4h) * 100)}%` : "—"}</b><span>通過後 4 小時上漲</span><em>從爆量收盤價算</em></div>
-            <div className="card"><b className={cls(stats.med)}>{pct(stats.med)}</b><span>通過後 4 小時中位數</span><em>只作對照</em></div>
-          </>
-        ) : null}
+        <div className="card"><b>{num(stats.passed)}</b><span>第二層通過</span><em>會發 Telegram · 觀察中 {num(stats.pending)}</em></div>
+        <div className="card"><b>{stats.n4h ? `${Math.round((stats.up / stats.n4h) * 100)}%` : "—"}</b><span>通過後 4 小時上漲</span><em>{num(stats.n4h)} 筆有事後 4h 資料</em></div>
+        <div className="card"><b className={cls(stats.med)}>{pct(stats.med)}</b><span>通過後 4 小時中位數</span><em>只作對照</em></div>
       </div>
       )}
 
@@ -453,23 +463,23 @@ export function ResearchBoard() {
                 <thead>
                   <tr>
                     <SortTh k="symbol" label="幣別" sort={cntSort} onSort={onCntSort} num={false} />
-                    <SortTh k="total" label="通過合計" sort={cntSort} onSort={onCntSort} />
-                    <SortTh k="livePassed" label="線上通過" sort={cntSort} onSort={onCntSort} />
-                    <SortTh k="btPassed" label="回測通過" sort={cntSort} onSort={onCntSort} />
-                    <SortTh k="livePending" label="觀察中" sort={cntSort} onSort={onCntSort} />
+                    <SortTh k="mt" label="市場" sort={cntSort} onSort={onCntSort} num={false} />
+                    <SortTh k="total" label="訊號次數" sort={cntSort} onSort={onCntSort} />
+                    <SortTh k="passed" label="通過" sort={cntSort} onSort={onCntSort} />
+                    <SortTh k="pending" label="觀察中" sort={cntSort} onSort={onCntSort} />
                     <SortTh k="last" label="最新訊號（台北）" sort={cntSort} onSort={onCntSort} />
-                    <SortTh k="avg4h" label="回測 4h 平均" sort={cntSort} onSort={onCntSort} />
-                    <SortTh k="med4h" label="回測 4h 中位數" sort={cntSort} onSort={onCntSort} />
+                    <SortTh k="avg4h" label="事後 4h 平均" sort={cntSort} onSort={onCntSort} />
+                    <SortTh k="med4h" label="事後 4h 中位數" sort={cntSort} onSort={onCntSort} />
                   </tr>
                 </thead>
                 <tbody>
                   {counts.slice(page * PAGE, page * PAGE + PAGE).map((c) => (
-                    <tr key={c.s} onClick={() => openCoin(c.s)} style={{ cursor: "pointer" }} title="在 K 線圖打開">
+                    <tr key={c.s} onClick={c.total ? () => openCoin(c.s) : undefined} style={{ cursor: c.total ? "pointer" : "default" }} title={c.total ? "在 K 線圖打開" : "沒有訊號"}>
                       <td><b>{c.s.replace(/USDT$/, "")}</b><span className="sym">USDT</span></td>
+                      <td>{c.mt ? <span className={`mt-tag ${c.mt}`}>{MARKET_LABEL[c.mt]}</span> : "—"}</td>
                       <td><b>{c.total}</b></td>
-                      <td>{c.livePassed || "—"}</td>
-                      <td>{c.btPassed || "—"}</td>
-                      <td>{c.livePending || "—"}</td>
+                      <td>{c.passed || "—"}</td>
+                      <td>{c.pending || "—"}</td>
                       <td style={{ whiteSpace: "nowrap" }}>{c.lastMs ? short(c.lastMs) : "—"}</td>
                       <td className={cls(c.avg4h)}>{pct(c.avg4h)}</td>
                       <td className={cls(c.med4h)}>{pct(c.med4h)}</td>
@@ -480,7 +490,7 @@ export function ResearchBoard() {
             </div>
             <div className="pager">
               <button className="btn" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>上一頁</button>
-              <span className="note">第 {page + 1} / {Math.max(1, Math.ceil(counts.length / PAGE))} 頁，共 {num(counts.length)} 個幣 · 點幣別打開 K 線</span>
+              <span className="note">第 {page + 1} / {Math.max(1, Math.ceil(counts.length / PAGE))} 頁，共 {num(counts.length)} 個幣 · 點有訊號的幣打開 K 線</span>
               <button className="btn" disabled={page + 1 >= Math.ceil(counts.length / PAGE)} onClick={() => setPage((p) => p + 1)}>下一頁</button>
             </div>
           </>
@@ -495,6 +505,7 @@ export function ResearchBoard() {
                 <tr>
                   <SortTh k="time" label="爆量收盤（台北）" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="symbol" label="幣別" sort={sigSort} onSort={onSigSort} num={false} />
+                  <SortTh k="mt" label="市場" sort={sigSort} onSort={onSigSort} num={false} />
                   <SortTh k="ord" label="該幣第幾筆" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="close" label="收盤價" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="ret" label="漲幅" sort={sigSort} onSort={onSigSort} />
@@ -503,7 +514,9 @@ export function ResearchBoard() {
                   <SortTh k="oi" label="未平倉變化" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="p" label="觀察窗 p" sort={sigSort} onSort={onSigSort} />
                   <SortTh k="status" label="狀態" sort={sigSort} onSort={onSigSort} num={false} />
-                  {tab === "backtest" ? <SortTh k="r4h" label="事後 4h" sort={sigSort} onSort={onSigSort} /> : <SortTh k="tg" label="Telegram" sort={sigSort} onSort={onSigSort} />}
+                  <SortTh k="r4h" label="事後 4h" sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="tg" label="Telegram" sort={sigSort} onSort={onSigSort} />
+                  <SortTh k="src" label="來源" sort={sigSort} onSort={onSigSort} num={false} />
                 </tr>
               </thead>
               <tbody>
@@ -516,6 +529,7 @@ export function ResearchBoard() {
                   >
                     <td style={{ whiteSpace: "nowrap" }}>{short(r.closeMs)}</td>
                     <td>{r.symbol}{r.source === "manual" ? <span className="sym"> 手冊</span> : null}</td>
+                    <td>{(() => { const mt = marketType(r.symbol); return mt ? <span className={`mt-tag ${mt}`}>{MARKET_LABEL[mt]}</span> : "—"; })()}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{(() => { const o = ordinals.get(ordKey(r)); return o ? <><b>{o.n}</b><span className="sym"> / {o.of}</span></> : "—"; })()}</td>
                     <td>{r.close == null ? "—" : r.close.toPrecision(6)}</td>
                     <td className={cls(r.ret)}>{pct(r.ret)}</td>
@@ -524,11 +538,13 @@ export function ResearchBoard() {
                     <td className={cls(r.oiChg)}>{pct(r.oiChg)}</td>
                     <td>{r.obsP == null ? "—" : r.obsP.toFixed(4)}</td>
                     <td title={r.reason || ""} style={{ color: MARK_COLOR[r.status] }}>{STATUS_LABEL[r.status]}</td>
-                    {tab === "backtest" ? <td className={cls(r.r4h)}>{pct(r.r4h)}</td> : <td>{r.telegram ? "已送" : "—"}</td>}
+                    <td className={cls(r.r4h)}>{pct(r.r4h)}</td>
+                    <td>{r.telegram ? "已送" : "—"}</td>
+                    <td className="sym">{r.source === "live" ? "線上" : "回測"}</td>
                   </tr>
                 ))}
                 {shown.length === 0 ? (
-                  <tr><td colSpan={11} className="note">沒有符合的訊號。</td></tr>
+                  <tr><td colSpan={14} className="note">沒有符合的訊號。</td></tr>
                 ) : null}
               </tbody>
             </table>

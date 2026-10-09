@@ -326,3 +326,7 @@ th.sortable.on .sort-ind { opacity: 1; }
 .counts-table td b { font-weight: 600; }
 .signal-chart .chart-title .seg button { padding: 5px 10px; }
 @media (max-width: 720px) { .signal-chart .chart-title { gap: 6px; } .signal-chart .chart-title .note { font-size: 0.8rem; } }
+.mt-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; font-size: 0.72rem; line-height: 1.6; white-space: nowrap; border: 1px solid; }
+td > .mt-tag:first-child { margin-left: 0; }
+.mt-tag.both { color: #7fc8a9; border-color: rgba(127, 200, 169, 0.45); }
+.mt-tag.perp { color: #a9a3d9; border-color: rgba(169, 163, 217, 0.45); }

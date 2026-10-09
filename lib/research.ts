@@ -1,4 +1,5 @@
 import SPOT_MAP from "./spot-map.json";
+import UNIVERSE from "./market-universe.json";
 
 /** Shared types and copy for the handover research rule. */
 
@@ -128,3 +129,13 @@ export const CONDITIONS: { n: number; label: string; detail: string }[] = [
 export function spotOf(perp: string, hint?: string | null): string {
   return hint || (SPOT_MAP as Record<string, string>)[perp] || perp;
 }
+
+/** Market type per perp symbol, from a market_universe snapshot (lib/market-universe.json). */
+export type MarketType = "both" | "perp";
+const MT = new Map<string, MarketType>([
+  ...UNIVERSE.spotPerp.map((x) => [x, "both"] as [string, MarketType]),
+  ...UNIVERSE.perpOnly.map((x) => [x, "perp"] as [string, MarketType]),
+]);
+export const ALL_PERPS: string[] = [...MT.keys()];
+export const marketType = (s: string): MarketType | null => MT.get(s) ?? null;
+export const MARKET_LABEL: Record<MarketType, string> = { both: "現貨＋合約", perp: "只有合約" };

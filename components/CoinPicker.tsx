@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { marketType, MARKET_LABEL } from "@/lib/research";
 import { FAV_KEY, RECENT_KEY, loadList, saveList } from "@/lib/chartPrefs";
 
 export type CoinInfo = { s: string; n: number; live: boolean; lastMs: number };
@@ -69,6 +70,7 @@ export function CoinPicker({ coins, value, onPick }: { coins: CoinInfo[]; value:
     <div className="coin-picker" ref={box}>
       <button className="btn coin-btn" onClick={() => setOpen((x) => !x)} aria-haspopup="listbox" aria-expanded={open}>
         <strong>{value ?? "選擇幣別"}</strong>
+        {value && marketType(value) ? <span className={`mt-tag ${marketType(value)}`}>{MARKET_LABEL[marketType(value)!]}</span> : null}
         {value && fav.includes(value) ? <span className="star on">★</span> : null}
         <span className="caret">▾</span>
       </button>
@@ -118,6 +120,7 @@ export function CoinPicker({ coins, value, onPick }: { coins: CoinInfo[]; value:
                       </span>
                       <b>{c.s.replace(/USDT$/, "")}</b>
                       <small>{c.n} 筆{c.live ? " · 線上" : ""}</small>
+                      {(() => { const mt = marketType(c.s); return mt ? <span className={`mt-tag ${mt}`}>{MARKET_LABEL[mt]}</span> : null; })()}
                       <em>{ago(c.lastMs)}</em>
                     </div>
                   );
