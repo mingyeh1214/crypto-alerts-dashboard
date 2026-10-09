@@ -8,6 +8,7 @@ import { num, pct, taipei } from "@/lib/format";
 import {
   MARK_COLOR,
   STATUS_LABEL,
+  isShown,
   spotOf,
   fromBacktest,
   fromLive,
@@ -84,7 +85,7 @@ export function ResearchBoard() {
       try {
         const rows = await rpc<LiveRow[]>("dashboard_research_signals");
         if (!dead) {
-          setLive((rows || []).map(fromLive));
+          setLive((rows || []).filter((r) => isShown(r.status)).map(fromLive));
           setLiveErr(null);
         }
       } catch (e) {
@@ -105,7 +106,7 @@ export function ResearchBoard() {
   useEffect(() => {
     fetch("/data/research_backtest.json")
       .then((r) => r.json())
-      .then((j: { rows: BacktestRow[] }) => setBt(j.rows.map(fromBacktest)))
+      .then((j: { rows: BacktestRow[] }) => setBt(j.rows.filter((r) => isShown(r.st)).map(fromBacktest)))
       .catch(() => {
         setBt([]);
         setBtErr("回測資料讀不到。");
@@ -248,9 +249,8 @@ export function ResearchBoard() {
           <label className="field inline">
             狀態
             <select value={status} onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(0); }}>
-              <option value="all">全部爆量</option>
+              <option value="all">全部（通過＋觀察中）</option>
               <option value="passed">通過（發 Telegram）</option>
-              <option value="failed">未過</option>
               <option value="pending">觀察中</option>
               <option value="error">資料不足</option>
             </select>
@@ -263,7 +263,7 @@ export function ResearchBoard() {
       </div>
 
       <div className="cards" style={{ margin: "10px 0 14px" }}>
-        <div className="card"><b>{num(stats.total)}</b><span>爆量（第一層）</span><em>{num(stats.symbols)} 個幣</em></div>
+        <div className="card"><b>{num(stats.total)}</b><span>訊號（通過＋觀察中）</span><em>{num(stats.symbols)} 個幣 · 不含未過</em></div>
         <div className="card"><b>{num(stats.passed)}</b><span>第二層通過</span><em>會發 Telegram</em></div>
         {tab === "backtest" ? (
           <>

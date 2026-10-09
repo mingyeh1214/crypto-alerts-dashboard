@@ -900,7 +900,6 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
       </div>
       <div className="pc-foot">
         <span><i style={{ background: MARK_COLOR.passed }} />通過</span>
-        <span><i style={{ background: MARK_COLOR.failed }} />未過</span>
         <span><i style={{ background: MARK_COLOR.pending }} />觀察中</span>
         <span>↑爆量 ↓判斷（收盤後 15 分）· 移到標記上看指標、點一下固定</span>
         <span>{perp ? "合約" : "現貨"} · 量為幣數 · 台北時間 · 每 15 秒更新{atStart ? " · 已到最早資料" : " · 往左拖載入更早"}</span>

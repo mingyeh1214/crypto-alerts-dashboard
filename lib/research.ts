@@ -51,6 +51,9 @@ export type BacktestRow = {
   o: number | null; st: SignalStatus; p: number | null; h4: number | null; src: "manual" | "oos";
 };
 
+/** The site hides layer-2 failures (未過); the worker still records them for research. */
+export const isShown = (s: SignalStatus) => s !== "failed";
+
 export const MARK_COLOR: Record<SignalStatus, string> = {
   passed: "#3cbe88",
   failed: "#e36d6d",

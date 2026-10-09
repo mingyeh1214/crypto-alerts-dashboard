@@ -3,17 +3,21 @@
 import { useEffect, useState } from "react";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
 import { num, pct, taipei } from "@/lib/format";
-import { STATUS_LABEL, type SignalStatus } from "@/lib/research";
+import { STATUS_LABEL, isShown, type SignalStatus } from "@/lib/research";
 
-type Snapshot = {
+type Row = {
+  id: number; symbol: string; burst_open: string; burst_close: string; status: SignalStatus; reason: string | null;
+  close: number | null; ret: number | null; rvol: number | null; taker_ratio: number | null;
+  oi_chg: number | null; obs_p: number | null; telegram_sent: boolean;
+};
+type Live = {
   generated_at: string;
   worker: { name: string; heartbeat: string; meta: Record<string, unknown> }[];
-  counts: { total: number; passed: number; failed: number; pending: number; error: number; last_24h: number };
-  recent: {
-    id: number; symbol: string; burst_close: string; status: SignalStatus; reason: string | null;
-    close: number | null; ret: number | null; rvol: number | null; taker_ratio: number | null;
-    oi_chg: number | null; obs_p: number | null; telegram_sent: boolean;
-  }[];
+};
+/** Failed (未過) rows are dropped here; counts only cover passed / pending / error. */
+type Snapshot = Live & {
+  counts: { passed: number; pending: number; last_24h: number };
+  recent: Row[];
 };
 
 const POLL_MS = 10_000;
@@ -32,14 +36,29 @@ export function LiveBoard() {
     let dead = false;
     const pull = async () => {
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/dashboard_research_live`, {
-          method: "POST",
-          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
-          body: "{}",
-          cache: "no-store",
-        });
-        if (!res.ok) throw new Error(String(res.status));
-        const j = (await res.json()) as Snapshot;
+        const call = async <T,>(fn: string) => {
+          const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+            method: "POST",
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+            body: "{}",
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error(String(res.status));
+          return (await res.json()) as T;
+        };
+        const [live, rows] = await Promise.all([call<Live>("dashboard_research_live"), call<Row[]>("dashboard_research_signals")]);
+        const shown = (rows || []).filter((r) => isShown(r.status));
+        const dayAgo = Date.now() - 86_400_000;
+        const j: Snapshot = {
+          generated_at: live.generated_at,
+          worker: live.worker,
+          counts: {
+            passed: shown.filter((r) => r.status === "passed").length,
+            pending: shown.filter((r) => r.status === "pending").length,
+            last_24h: shown.filter((r) => Date.parse(r.burst_open) >= dayAgo).length,
+          },
+          recent: shown.slice(0, 30),
+        };
         if (!dead) { setSnap(j); setErr(null); }
       } catch (e) {
         if (!dead) setErr(e instanceof Error && e.message === "404" ? "即時資料函式還沒建立（等 worker 上線）。" : "即時資料暫時讀不到。");
@@ -65,7 +84,7 @@ export function LiveBoard() {
           <span>上次心跳</span><em>{w ? taipei(w.heartbeat) : "沒有 worker"}</em>
         </div>
         <div className="card"><b>{num(n("ready"))}<small> / {num(n("universe"))}</small></b><span>已暖機的幣</span><em>有現貨的永續</em></div>
-        <div className="card"><b>{num(snap.counts.last_24h)}</b><span>24 小時爆量</span><em>第一層</em></div>
+        <div className="card"><b>{num(snap.counts.last_24h)}</b><span>24 小時訊號</span><em>通過＋觀察中</em></div>
         <div className="card"><b>{num(snap.counts.passed)}</b><span>累計通過</span><em>發 Telegram</em></div>
         <div className="card"><b>{num(snap.counts.pending)}</b><span>觀察中</span><em>等 15 分鐘判斷</em></div>
       </div>
@@ -73,7 +92,7 @@ export function LiveBoard() {
         本輪掃描：{typeof r.last_cycle_tp === "string" ? `${r.last_cycle_tp.slice(0, 16)} 開盤那根` : "—"}，
         耗時 {n("last_cycle_s") ?? "—"} 秒；累計初篩 {num(n("prefilter"))} 次、候選 {num(n("candidates"))}、主動買賣比逾時 {num(n("taker_timeouts"))}。
       </p>
-      <h2>最近的爆量</h2>
+      <h2>最近的訊號（不含未過）</h2>
       <div className="scroll">
         <table>
           <thead>
