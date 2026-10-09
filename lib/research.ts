@@ -1,3 +1,5 @@
+import SPOT_MAP from "./spot-map.json";
+
 /** Shared types and copy for the handover research rule. */
 
 export type SignalStatus = "pending" | "passed" | "failed" | "error";
@@ -18,6 +20,7 @@ export type Burst = {
   obsTrend?: number | null;
   r4h?: number | null;
   source: "live" | "manual" | "oos";
+  spotSymbol?: string | null;
   telegram?: boolean;
   reason?: string | null;
 };
@@ -25,6 +28,7 @@ export type Burst = {
 export type LiveRow = {
   id: number;
   symbol: string;
+  spot_symbol?: string | null;
   burst_open: string;
   burst_close: string;
   decide_at: string;
@@ -45,6 +49,13 @@ export type LiveRow = {
 export type BacktestRow = {
   s: string; t: string; c: number | null; r: number | null; v: number | null; k: number | null;
   o: number | null; st: SignalStatus; p: number | null; h4: number | null; src: "manual" | "oos";
+};
+
+export const MARK_COLOR: Record<SignalStatus, string> = {
+  passed: "#3cbe88",
+  failed: "#e36d6d",
+  pending: "#e3b341",
+  error: "#8b97a8",
 };
 
 export const STATUS_LABEL: Record<SignalStatus, string> = {
@@ -73,6 +84,7 @@ export function fromLive(r: LiveRow): Burst {
     obsP: r.obs_p,
     obsTrend: r.obs_trend,
     source: "live",
+    spotSymbol: r.spot_symbol ?? null,
     telegram: r.telegram_sent,
     reason: r.reason,
   };
@@ -107,3 +119,9 @@ export const CONDITIONS: { n: number; label: string; detail: string }[] = [
   { n: 9, label: "上影線 < 0.45", detail: "(最高 − max(開, 收)) ÷ (最高 − 最低)。" },
   { n: 10, label: "現貨同時上漲", detail: "同名現貨這 5 分鐘收盤高於前一根。沒有現貨的幣永遠不會過這條。" },
 ];
+
+
+/** Same-name spot pair for a USDT-M perp (1000PEPEUSDT -> PEPEUSDT). */
+export function spotOf(perp: string, hint?: string | null): string {
+  return hint || (SPOT_MAP as Record<string, string>)[perp] || perp;
+}
