@@ -13,6 +13,9 @@ const nextConfig: NextConfig = {
       { source: "/backtest", destination: "/signals", permanent: true },
       { source: "/backtests", destination: "/signals", permanent: true },
       { source: "/backtests/:path*", destination: "/signals", permanent: true },
+      { source: "/signals-perp", destination: "/signals", permanent: false },
+      { source: "/sim", destination: "/", permanent: false },
+      { source: "/reports/:path*", destination: "/signals", permanent: false },
     ];
   },
 };

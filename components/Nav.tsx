@@ -4,11 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
-  { href: "/", label: "總覽" },
+  { href: "/", label: "規則" },
   { href: "/signals", label: "訊號" },
-  { href: "/signals-perp", label: "合約" },
   { href: "/live", label: "即時" },
-  { href: "/sim", label: "模擬" },
 ];
 
 export function Nav() {
@@ -17,7 +15,7 @@ export function Nav() {
     <header className="top">
       <div className="brand">
         <strong>盯盤哨兵</strong>
-        <span>P12_z278 · 現貨 USDT</span>
+        <span>研究規則 · 合約 5 分 K 爆量＋未平倉確認</span>
       </div>
       <nav>
         {LINKS.map((l) => (

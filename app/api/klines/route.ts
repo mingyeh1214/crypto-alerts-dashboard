@@ -79,7 +79,21 @@ export async function GET(req: NextRequest) {
   }
   const end = Date.now();
   const recentRaw = req.nextUrl.searchParams.get("recent");
+  const fromRaw = req.nextUrl.searchParams.get("from");
+  const toRaw = req.nextUrl.searchParams.get("to");
   try {
+    if (fromRaw != null && toRaw != null) {
+      // Fixed window around one signal (at most 1000 bars).
+      const from = Math.floor(Number(fromRaw));
+      const to = Math.min(end, Math.floor(Number(toRaw)));
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from || (to - from) / step > 1000) {
+        return NextResponse.json({ error: "參數不正確" }, { status: 400 });
+      }
+      const candles = (await fetchChunk(symbol, interval, from, to, to >= end - 2 * step, market))
+        .filter((c) => Number.isFinite(c.open) && c.time > 0)
+        .sort((a, b) => a.time - b.time);
+      return NextResponse.json({ symbol, interval, candles });
+    }
     if (recentRaw != null) {
       const limit = Math.min(1000, Math.max(2, Math.floor(Number(recentRaw)) || 120));
       // Tight window so Binance's limit does not drop the forming candle.

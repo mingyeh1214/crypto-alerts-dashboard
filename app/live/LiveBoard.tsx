@@ -2,245 +2,102 @@
 
 import { useEffect, useState } from "react";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
-import { taipei } from "@/lib/format";
-
-type AlertRow = {
-  id: number;
-  symbol: string;
-  market_type: string | null;
-  alert_type: string;
-  severity: string;
-  title: string;
-  message: string;
-  triggered_at: string;
-  telegram_sent: boolean;
-};
-
-type WatchRow = {
-  id: number;
-  symbol: string;
-  market_type: string;
-  status: string;
-  alert_time: string;
-  alert_price: number;
-  m5_status: string | null;
-  m5_sent: boolean;
-  m15_status: string | null;
-  m15_sent: boolean;
-  entry_tf: string | null;
-  m4h_sent: boolean;
-  m1d_sent: boolean;
-  end_reason: string | null;
-  ended_at: string | null;
-};
-
-type Worker = {
-  name: string;
-  heartbeat: string;
-  last_symbol: string | null;
-  meta: Record<string, unknown>;
-};
+import { num, pct, taipei } from "@/lib/format";
+import { STATUS_LABEL, type SignalStatus } from "@/lib/research";
 
 type Snapshot = {
   generated_at: string;
-  symbols_spot_enabled: number;
-  rules_quiet_surge_enabled: number;
-  rules_p12_enabled?: number;
-  rules_enabled_other: number;
-  watches_active: number;
-  watches_by_status: Record<string, number>;
-  quiet_surge_symbols: string[];
-  worker: Worker[];
-  recent_alerts: AlertRow[];
-  recent_watches: WatchRow[];
+  worker: { name: string; heartbeat: string; meta: Record<string, unknown> }[];
+  counts: { total: number; passed: number; failed: number; pending: number; error: number; last_24h: number };
+  recent: {
+    id: number; symbol: string; burst_close: string; status: SignalStatus; reason: string | null;
+    close: number | null; ret: number | null; rvol: number | null; taker_ratio: number | null;
+    oi_chg: number | null; obs_p: number | null; telegram_sent: boolean;
+  }[];
 };
 
-const STATUS: Record<string, string> = {
-  active: "追蹤中",
-  completed: "已完成",
-  invalid: "已失效",
-  valid: "有效",
-  observe: "觀察",
-};
+const POLL_MS = 10_000;
 
-const POLL_MS = 5_000;
-
-function useNow() {
+export function LiveBoard() {
+  const [snap, setSnap] = useState<Snapshot | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-  return now;
-}
-
-function ageSec(iso: string | null | undefined, now: number) {
-  if (!iso) return null;
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return null;
-  return Math.max(0, Math.round((now - t) / 1000));
-}
-
-export function LiveBoard() {
-  const [data, setData] = useState<Snapshot | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [at, setAt] = useState<number>(0);
-  const now = useNow();
 
   useEffect(() => {
-    let cancel = false;
-    async function load() {
+    let dead = false;
+    const pull = async () => {
       try {
-        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/dashboard_live`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/dashboard_research_live`, {
           method: "POST",
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-            "Content-Type": "application/json",
-            "Cache-Control": "no-cache",
-          },
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
           body: "{}",
           cache: "no-store",
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = (await res.json()) as Snapshot;
-        if (cancel) return;
-        setData(json);
-        setErr(null);
-        setAt(Date.now());
+        if (!res.ok) throw new Error(String(res.status));
+        const j = (await res.json()) as Snapshot;
+        if (!dead) { setSnap(j); setErr(null); }
       } catch (e) {
-        if (!cancel) setErr(e instanceof Error ? e.message : "讀取失敗");
+        if (!dead) setErr(e instanceof Error && e.message === "404" ? "即時資料函式還沒建立（等 worker 上線）。" : "即時資料暫時讀不到。");
       }
-    }
-    load();
-    const id = setInterval(load, POLL_MS);
-    const onVis = () => {
-      if (document.visibilityState === "visible") load();
     };
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      cancel = true;
-      clearInterval(id);
-      document.removeEventListener("visibilitychange", onVis);
-    };
+    pull();
+    const id = setInterval(pull, POLL_MS);
+    return () => { dead = true; clearInterval(id); };
   }, []);
 
-  const w = data?.worker?.[0];
-  const meta = (w?.meta ?? {}) as Record<string, number | string | boolean>;
-  const hbAge = ageSec(w?.heartbeat, now);
-  const fetchAge = at ? Math.max(0, Math.round((now - at) / 1000)) : null;
-  const p12 = (data?.recent_alerts ?? []).filter((a) => a.alert_type === "p12_z278");
+  if (err) return <p className="err">{err}</p>;
+  if (!snap) return <p className="note">載入中…</p>;
+  const w = snap.worker[0];
+  const age = w ? Math.round((now - Date.parse(w.heartbeat)) / 1000) : null;
+  const r = (w?.meta?.research ?? {}) as Record<string, unknown>;
+  const n = (k: string) => (typeof r[k] === "number" ? (r[k] as number) : null);
 
   return (
     <div>
-      <p className="note">
-        現在時間每秒走，警報每 5 秒向資料庫抓一次，不用重新整理。
-        現在：{taipei(new Date(now).toISOString())}
-        。上次抓取：{at ? `${taipei(new Date(at).toISOString())}（${fetchAge} 秒前）` : "…"}
-        {err ? <span className="err">　{err}</span> : null}
-      </p>
-
       <div className="cards">
         <div className="card">
-          <b>{taipei(new Date(now).toISOString()).replace(" 台北", "")}</b>
-          <span>現在（台北）</span>
-          <em>每秒更新</em>
+          <b className={age != null && age < 120 ? "up" : "dn"}>{age == null ? "—" : `${age} 秒`}</b>
+          <span>上次心跳</span><em>{w ? taipei(w.heartbeat) : "沒有 worker"}</em>
         </div>
-        <div className="card">
-          <b>{data ? (data.rules_p12_enabled ?? data.rules_enabled_other ?? 0) : "…"}</b>
-          <span>啟用中的 P12_z278</span>
-        </div>
-        <div className="card">
-          <b>{meta.p12_ready ?? meta.quotes_ready ?? "…"}</b>
-          <span>z 基準就緒（可觸發）</span>
-        </div>
-        <div className="card">
-          <b>{meta.oi_ready ?? "…"}</b>
-          <span>OI 就緒</span>
-        </div>
-        <div className="card">
-          <b>{data ? data.watches_active : "…"}</b>
-          <span>進行中的進場後追蹤</span>
-        </div>
-        <div className="card">
-          <b>{hbAge == null ? "…" : `${hbAge} 秒前`}</b>
-          <span>worker 心跳</span>
-          <em>{w ? taipei(w.heartbeat) : ""}{typeof meta.status === "string" ? ` · ${meta.status}` : ""}</em>
-        </div>
+        <div className="card"><b>{num(n("ready"))}<small> / {num(n("universe"))}</small></b><span>已暖機的幣</span><em>有現貨的永續</em></div>
+        <div className="card"><b>{num(snap.counts.last_24h)}</b><span>24 小時爆量</span><em>第一層</em></div>
+        <div className="card"><b>{num(snap.counts.passed)}</b><span>累計通過</span><em>發 Telegram</em></div>
+        <div className="card"><b>{num(snap.counts.pending)}</b><span>觀察中</span><em>等 15 分鐘判斷</em></div>
       </div>
-
-      <h2>最近警報</h2>
       <p className="note">
-        只顯示 P12_z278，新進場寫進同一張 alerts 表，這頁與訊號頁一起讀。已送的會立刻出現在訊號明細；未送 Telegram 的補庫不會進訊號頁。
+        本輪掃描：{typeof r.last_cycle_tp === "string" ? `${r.last_cycle_tp.slice(0, 16)} 開盤那根` : "—"}，
+        耗時 {n("last_cycle_s") ?? "—"} 秒；累計初篩 {num(n("prefilter"))} 次、候選 {num(n("candidates"))}、主動買賣比逾時 {num(n("taker_timeouts"))}。
       </p>
+      <h2>最近的爆量</h2>
       <div className="scroll">
         <table>
           <thead>
-            <tr>
-              <th className="left">時間（台北）</th>
-              <th className="left">幣</th>
-              <th className="left">類型</th>
-              <th className="left">標題</th>
-              <th>Telegram</th>
-            </tr>
+            <tr><th>爆量收盤</th><th>幣別</th><th>收盤價</th><th>漲幅</th><th>相對量</th><th>主動買賣比</th><th>未平倉</th><th>觀察窗 p</th><th>狀態</th><th>Telegram</th></tr>
           </thead>
           <tbody>
-            {p12.map((a) => (
-              <tr key={a.id}>
-                <td className="left">{taipei(a.triggered_at)}</td>
-                <td className="left">{a.symbol}</td>
-                <td className="left">{a.alert_type}</td>
-                <td className="left">{a.title}</td>
-                <td>{a.telegram_sent ? "已送" : "未送"}</td>
+            {snap.recent.map((x) => (
+              <tr key={x.id}>
+                <td style={{ whiteSpace: "nowrap" }}>{taipei(x.burst_close)}</td>
+                <td>{x.symbol}</td>
+                <td>{x.close == null ? "—" : x.close.toPrecision(6)}</td>
+                <td>{pct(x.ret)}</td>
+                <td>{x.rvol == null ? "—" : x.rvol.toFixed(1)}</td>
+                <td>{x.taker_ratio == null ? "—" : x.taker_ratio.toFixed(3)}</td>
+                <td>{pct(x.oi_chg)}</td>
+                <td>{x.obs_p == null ? "—" : x.obs_p.toFixed(4)}</td>
+                <td title={x.reason || ""}>{STATUS_LABEL[x.status]}</td>
+                <td>{x.telegram_sent ? "已送" : "—"}</td>
               </tr>
             ))}
-            {data && p12.length === 0 ? (
-              <tr><td className="left" colSpan={5}>還沒有警報</td></tr>
-            ) : null}
+            {snap.recent.length === 0 ? <tr><td colSpan={10} className="note">還沒有訊號。</td></tr> : null}
           </tbody>
         </table>
       </div>
-
-      <h2>進場後追蹤</h2>
-      <p className="note">鎖定規則沒有 +5 分／+15 分追蹤。舊的 quiet_surge 追蹤已封存。</p>
-      <div className="scroll">
-        <table>
-          <thead>
-            <tr>
-              <th className="left">警報時間</th>
-              <th className="left">幣</th>
-              <th className="left">狀態</th>
-              <th>價</th>
-              <th className="left">+5 分</th>
-              <th className="left">+15 分</th>
-              <th>+4 時</th>
-              <th>+1 日</th>
-              <th className="left">結束原因</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(data?.recent_watches ?? []).filter((wrow) => wrow.status === "active" && false).map((wrow) => (
-              <tr key={wrow.id}>
-                <td className="left">{taipei(wrow.alert_time)}</td>
-                <td className="left">{wrow.symbol}</td>
-                <td className="left">{STATUS[wrow.status] ?? wrow.status}</td>
-                <td>{wrow.alert_price}</td>
-                <td className="left">{wrow.m5_status ? (STATUS[wrow.m5_status] ?? wrow.m5_status) : "—"}</td>
-                <td className="left">{wrow.m15_status ? (STATUS[wrow.m15_status] ?? wrow.m15_status) : "—"}</td>
-                <td>{wrow.m4h_sent ? "已送" : "—"}</td>
-                <td>{wrow.m1d_sent ? "已送" : "—"}</td>
-                <td className="left">{wrow.end_reason ?? "—"}</td>
-              </tr>
-            ))}
-            {data && data.recent_watches.filter(() => false).length === 0 ? (
-              <tr><td className="left" colSpan={9}>目前沒有追蹤紀錄</td></tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-
-      <h2>現貨宇宙</h2>
-      <p className="note">啟用中的現貨 {data ? data.symbols_spot_enabled : "…"} 檔（幣安現貨 USDT ∩ 永續）。worker 心跳的 meta.p12_universe 是實際套用鎖定規則的名單。</p>
     </div>
   );
 }
