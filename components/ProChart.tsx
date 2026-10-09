@@ -250,10 +250,12 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
         const wantEnd = anchor + 300 * step;
         const to = wantEnd >= now ? liveEnd : Math.floor(wantEnd / step) * step;
         const from = to - (PAGE - 1) * step;
+        // Only pull the extra series whose pane is on (keeps Binance weight down).
+        const want = loadPrefs().panes;
         const [kl, oi, pr] = await Promise.all([
           getJson<{ candles: Bar[] }>(klUrl(sym, market, from, to), ac.signal),
-          perp ? getJson<{ points: { time: number; value: number }[] }>(oiUrl(from, to), ac.signal).catch(() => ({ points: [] })) : Promise.resolve({ points: [] }),
-          perp ? getJson<{ candles: Bar[] }>(klUrl(symbol, "premium", from, to), ac.signal).catch(() => ({ candles: [] })) : Promise.resolve({ candles: [] }),
+          perp && want.oi ? getJson<{ points: { time: number; value: number }[] }>(oiUrl(from, to), ac.signal).catch(() => ({ points: [] })) : Promise.resolve({ points: [] }),
+          perp && want.premium ? getJson<{ candles: Bar[] }>(klUrl(symbol, "premium", from, to), ac.signal).catch(() => ({ candles: [] })) : Promise.resolve({ candles: [] }),
         ]);
         if (ac.signal.aborted) return;
         if (!kl.candles.length) throw new Error(market === "spot" ? `現貨 ${sym} 沒有資料` : "這段時間沒有 K 線");
@@ -272,6 +274,14 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
     })();
     return () => ac.abort();
   }, [sym, symbol, market, perp, step, focusMs, retry, klUrl, oiUrl]);
+
+  // Turning on OI / premium after the first load: reload so the series gets fetched.
+  useEffect(() => {
+    if (status.kind !== "ready" || !perp) return;
+    const d = dataRef.current;
+    if ((prefs.panes.oi && d.oi.size === 0) || (prefs.panes.premium && d.prem.size === 0)) setRetry((x) => x + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefs.panes.oi, prefs.panes.premium]);
 
   // ------------------------------------------------------- data -> series --
   const updateData = useCallback(() => {
