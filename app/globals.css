@@ -234,3 +234,11 @@ td.action.act-neutral b { color: #b7c2d0; }
 td.action div { line-height: 1.35; white-space: normal; }
 
 tbody tr.on td { background: rgba(90, 169, 228, 0.12); }
+
+.signal-chart { margin-bottom: 22px; scroll-margin-top: 12px; }
+.signal-chart .toolbar { margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+.chart-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.chart-title strong { font-size: 1.15rem; }
+.chart-title span { color: var(--muted); font-size: 0.9rem; }
+.chart-box.chart-tall { height: min(600px, 66vh); min-height: 440px; }
+.field.inline input[list] { min-width: 15rem; }

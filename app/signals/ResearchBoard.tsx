@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { BurstChart } from "@/components/BurstChart";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { BurstChart, MARK_COLOR, type ChartMark } from "@/components/BurstChart";
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/public-config";
 import { num, pct, taipei } from "@/lib/format";
 import {
@@ -40,16 +40,22 @@ function cls(x: number | null | undefined) {
   return x > 0 ? "up" : x < 0 ? "dn" : "";
 }
 
+const latest = (xs: Burst[]) => xs.reduce<Burst | null>((a, b) => (!a || b.closeMs > a.closeMs ? b : a), null);
+const short = (ms: number) => taipei(new Date(ms).toISOString()).replace(/:00 台北$/, "").replace(" 台北", "");
+
 export function ResearchBoard() {
   const [tab, setTab] = useState<Tab>("live");
   const [live, setLive] = useState<Burst[] | null>(null);
   const [liveErr, setLiveErr] = useState<string | null>(null);
   const [bt, setBt] = useState<Burst[] | null>(null);
   const [btErr, setBtErr] = useState<string | null>(null);
-  const [status, setStatus] = useState<StatusFilter>("passed");
-  const [q, setQ] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
+  const [listCoin, setListCoin] = useState(""); // "" = all coins
+  const [coinText, setCoinText] = useState("");
+  const [chartCoin, setChartCoin] = useState<string | null>(null);
+  const [focusMs, setFocusMs] = useState<number | null>(null);
   const [page, setPage] = useState(0);
-  const [sel, setSel] = useState<Burst | null>(null);
+  const chartRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     let dead = false;
@@ -61,7 +67,10 @@ export function ResearchBoard() {
           setLiveErr(null);
         }
       } catch (e) {
-        if (!dead) setLiveErr(e instanceof Error && e.message === "404" ? "線上訊號表還沒建立（等 worker 上線）。" : "線上訊號暫時讀不到。");
+        if (!dead) {
+          setLive((x) => x ?? []);
+          setLiveErr(e instanceof Error && e.message === "404" ? "線上訊號表還沒建立。" : "線上訊號暫時讀不到。");
+        }
       }
     };
     pull();
@@ -73,56 +82,166 @@ export function ResearchBoard() {
   }, []);
 
   useEffect(() => {
-    if (tab !== "backtest" || bt) return;
     fetch("/data/research_backtest.json")
       .then((r) => r.json())
       .then((j: { rows: BacktestRow[] }) => setBt(j.rows.map(fromBacktest)))
-      .catch(() => setBtErr("回測資料讀不到。"));
-  }, [tab, bt]);
+      .catch(() => {
+        setBt([]);
+        setBtErr("回測資料讀不到。");
+      });
+  }, []);
+
+  // Every signal per coin (live wins over a backtest row at the same bar).
+  const byCoin = useMemo(() => {
+    const m = new Map<string, Map<number, Burst>>();
+    for (const r of [...(bt || []), ...(live || [])]) {
+      const mm = m.get(r.symbol) ?? new Map<number, Burst>();
+      mm.set(r.closeMs, r);
+      m.set(r.symbol, mm);
+    }
+    return m;
+  }, [live, bt]);
+  const coins = useMemo(() => {
+    const liveSet = new Set((live || []).map((r) => r.symbol));
+    return [...byCoin.keys()]
+      .map((s) => ({ s, n: byCoin.get(s)!.size, live: liveSet.has(s) }))
+      .sort((a, b) => Number(b.live) - Number(a.live) || a.s.localeCompare(b.s));
+  }, [byCoin, live]);
+
+  // Default chart: latest live passed -> latest live of any status -> latest backtest.
+  const fallback = useMemo(() => {
+    const l = live || [];
+    return latest(l.filter((r) => r.status === "passed")) ?? latest(l) ?? latest(bt || []);
+  }, [live, bt]);
+  const ready = live != null && bt != null;
+  const coin = chartCoin ?? fallback?.symbol ?? null;
+  const coinSignals = useMemo(
+    () => (coin ? [...(byCoin.get(coin)?.values() ?? [])].sort((a, b) => a.closeMs - b.closeMs) : []),
+    [coin, byCoin],
+  );
+  const focus =
+    focusMs ??
+    (chartCoin == null && fallback ? fallback.closeMs : null) ??
+    latest(coinSignals.filter((r) => r.source === "live"))?.closeMs ??
+    latest(coinSignals)?.closeMs ??
+    null;
+  const focusIdx = coinSignals.findIndex((r) => r.closeMs === focus);
+  const focused = focusIdx >= 0 ? coinSignals[focusIdx] : null;
+  const marks: ChartMark[] = coinSignals.map((r) => ({ closeMs: r.closeMs, status: r.status }));
+
+  const pickCoin = (s: string) => {
+    if (!s) {
+      setListCoin("");
+      setCoinText("");
+    } else {
+      setListCoin(s);
+      setCoinText(s);
+      setChartCoin(s);
+      setFocusMs(null);
+    }
+    setPage(0);
+  };
+  const onCoinText = (v: string) => {
+    setCoinText(v);
+    const u = v.trim().toUpperCase();
+    if (!u) return pickCoin("");
+    const hit = byCoin.has(u) ? u : byCoin.has(`${u}USDT`) ? `${u}USDT` : null;
+    if (hit) pickCoin(hit);
+  };
+  const jump = (r: Burst) => {
+    setChartCoin(r.symbol);
+    setFocusMs(r.closeMs);
+    chartRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const rows = tab === "live" ? live : bt;
-  const filtered = useMemo(() => {
-    const needle = q.trim().toUpperCase();
-    return (rows || []).filter(
-      (r) => (status === "all" || r.status === status) && (!needle || r.symbol.includes(needle)),
-    );
-  }, [rows, status, q]);
+  const filtered = useMemo(
+    () => (rows || []).filter((r) => (status === "all" || r.status === status) && (!listCoin || r.symbol === listCoin)),
+    [rows, status, listCoin],
+  );
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE));
   const shown = filtered.slice(page * PAGE, page * PAGE + PAGE);
   const stats = useMemo(() => {
-    const all = rows || [];
+    const all = (rows || []).filter((r) => !listCoin || r.symbol === listCoin);
     const passed = all.filter((r) => r.status === "passed");
     const withR = passed.map((r) => r.r4h).filter((x): x is number => x != null);
     const up = withR.filter((x) => x > 0).length;
     const sorted = [...withR].sort((a, b) => a - b);
     const med = sorted.length ? sorted[Math.floor(sorted.length / 2)] : null;
     return { total: all.length, passed: passed.length, symbols: new Set(all.map((r) => r.symbol)).size, up, n4h: withR.length, med };
-  }, [rows]);
-
+  }, [rows, listCoin]);
   const err = tab === "live" ? liveErr : btErr;
 
   return (
     <div className="explorer">
+      <section ref={chartRef} className="signal-chart">
+        <div className="toolbar">
+          <div className="chart-title">
+            {coin ? (
+              <>
+                <strong>{coin}</strong>
+                {focused ? (
+                  <span>
+                    爆量收盤 {short(focused.closeMs)} ·{" "}
+                    <b style={{ color: MARK_COLOR[focused.status] }}>{STATUS_LABEL[focused.status]}</b>
+                    {focused.source === "live" ? " · 線上" : " · 回測"}
+                    {chartCoin == null ? "（最新訊號）" : ""}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <span className="note">{ready ? "還沒有訊號。" : "載入中…"}</span>
+            )}
+          </div>
+          <div className="toolbar-actions">
+            <label className="field inline">
+              幣別
+              <input
+                list="signal-coins"
+                value={coinText}
+                placeholder="全部幣別（輸入搜尋，例如 GTC）"
+                onChange={(e) => onCoinText(e.target.value)}
+              />
+              <datalist id="signal-coins">
+                {coins.map((c) => (
+                  <option key={c.s} value={c.s}>{`${c.n} 筆${c.live ? " · 有線上訊號" : ""}`}</option>
+                ))}
+              </datalist>
+            </label>
+            {listCoin ? <button className="btn" onClick={() => pickCoin("")}>全部幣別</button> : null}
+            <button className="btn" disabled={focusIdx <= 0} onClick={() => setFocusMs(coinSignals[focusIdx - 1].closeMs)}>← 上一個</button>
+            <button className="btn" disabled={focusIdx < 0 || focusIdx + 1 >= coinSignals.length} onClick={() => setFocusMs(coinSignals[focusIdx + 1].closeMs)}>下一個 →</button>
+          </div>
+        </div>
+        {coin && focus != null ? (
+          <BurstChart symbol={coin} focusMs={focus} marks={marks} />
+        ) : (
+          <div className="chart-box"><div className="chart-empty"><span>{ready ? "沒有可顯示的訊號" : "載入中…"}</span></div></div>
+        )}
+        {coin ? (
+          <p className="note">
+            {coin} 共 {coinSignals.length} 筆訊號（線上＋回測），圖上標出這段時間內的每一筆；點下面列表的一列可以跳到那個時間。
+          </p>
+        ) : null}
+      </section>
+
       <div className="toolbar">
         <div className="seg">
-          <button className={tab === "live" ? "on" : ""} onClick={() => { setTab("live"); setPage(0); setSel(null); }}>線上</button>
-          <button className={tab === "backtest" ? "on" : ""} onClick={() => { setTab("backtest"); setPage(0); setSel(null); }}>回測（9 月起）</button>
+          <button className={tab === "live" ? "on" : ""} onClick={() => { setTab("live"); setPage(0); }}>線上</button>
+          <button className={tab === "backtest" ? "on" : ""} onClick={() => { setTab("backtest"); setPage(0); }}>回測（9 月起）</button>
         </div>
         <div className="toolbar-actions">
           <label className="field inline">
             狀態
             <select value={status} onChange={(e) => { setStatus(e.target.value as StatusFilter); setPage(0); }}>
+              <option value="all">全部爆量</option>
               <option value="passed">通過（發 Telegram）</option>
               <option value="failed">未過</option>
               <option value="pending">觀察中</option>
               <option value="error">資料不足</option>
-              <option value="all">全部爆量</option>
             </select>
           </label>
-          <label className="field inline">
-            幣別
-            <input value={q} placeholder="例如 GTC" onChange={(e) => { setQ(e.target.value); setPage(0); }} />
-          </label>
+          <span className="note">列表：{listCoin || "全部幣別"}</span>
         </div>
       </div>
 
@@ -139,16 +258,6 @@ export function ResearchBoard() {
 
       {err ? <p className="err">{err}</p> : null}
       {rows == null && !err ? <p className="note">載入中…</p> : null}
-
-      {sel ? (
-        <section className="chart-sticky">
-          <h2>
-            {sel.symbol} · 爆量收盤 {taipei(new Date(sel.closeMs).toISOString())}{" "}
-            <button className="btn" onClick={() => setSel(null)}>關閉</button>
-          </h2>
-          <BurstChart symbol={sel.symbol} closeMs={sel.closeMs} />
-        </section>
-      ) : null}
 
       {rows ? (
         <>
@@ -170,8 +279,13 @@ export function ResearchBoard() {
               </thead>
               <tbody>
                 {shown.map((r) => (
-                  <tr key={r.key} onClick={() => setSel(r)} style={{ cursor: "pointer" }} className={sel?.key === r.key ? "on" : ""}>
-                    <td style={{ whiteSpace: "nowrap" }}>{taipei(new Date(r.closeMs).toISOString()).replace(":00 台北", "")}</td>
+                  <tr
+                    key={r.key}
+                    onClick={() => jump(r)}
+                    style={{ cursor: "pointer" }}
+                    className={r.symbol === coin && r.closeMs === focus ? "on" : ""}
+                  >
+                    <td style={{ whiteSpace: "nowrap" }}>{short(r.closeMs)}</td>
                     <td>{r.symbol}{r.source === "manual" ? <span className="sym"> 手冊</span> : null}</td>
                     <td>{r.close == null ? "—" : r.close.toPrecision(6)}</td>
                     <td className={cls(r.ret)}>{pct(r.ret)}</td>
@@ -179,12 +293,8 @@ export function ResearchBoard() {
                     <td>{r.taker == null ? "—" : r.taker.toFixed(3)}</td>
                     <td className={cls(r.oiChg)}>{pct(r.oiChg)}</td>
                     <td>{r.obsP == null ? "—" : r.obsP.toFixed(4)}</td>
-                    <td title={r.reason || ""}>{STATUS_LABEL[r.status]}</td>
-                    {tab === "backtest" ? (
-                      <td className={cls(r.r4h)}>{pct(r.r4h)}</td>
-                    ) : (
-                      <td>{r.telegram ? "已送" : "—"}</td>
-                    )}
+                    <td title={r.reason || ""} style={{ color: MARK_COLOR[r.status] }}>{STATUS_LABEL[r.status]}</td>
+                    {tab === "backtest" ? <td className={cls(r.r4h)}>{pct(r.r4h)}</td> : <td>{r.telegram ? "已送" : "—"}</td>}
                   </tr>
                 ))}
                 {shown.length === 0 ? (
