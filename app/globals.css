@@ -317,3 +317,12 @@ tbody tr.on td { background: rgba(90, 169, 228, 0.12); }
   .pc-panel-grid { grid-template-columns: 1fr; }
   .pc-iv button { padding: 4px 8px; }
 }
+
+th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable:hover { color: var(--text); }
+th.sortable .sort-ind { margin-left: 4px; font-size: 0.7em; opacity: 0.45; }
+th.sortable.on { color: var(--amber); }
+th.sortable.on .sort-ind { opacity: 1; }
+.counts-table td b { font-weight: 600; }
+.signal-chart .chart-title .seg button { padding: 5px 10px; }
+@media (max-width: 720px) { .signal-chart .chart-title { gap: 6px; } .signal-chart .chart-title .note { font-size: 0.8rem; } }
