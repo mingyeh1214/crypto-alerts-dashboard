@@ -589,7 +589,7 @@ export function ResearchBoard() {
                     className={r.symbol === coin && r.closeMs === focus ? "on" : ""}
                   >
                     <td style={{ whiteSpace: "nowrap" }}>{short(r.closeMs)}</td>
-                    <td>{r.symbol}{r.status !== "passed" ? <span className={`st-tag ${r.status}`} title={r.reason || ""}>{STATUS_LABEL[r.status]}</span> : null}</td>
+                    <td>{r.symbol}{r.status !== "passed" ? <span className={`st-tag ${r.status}`} title={r.reason || ""}>{STATUS_LABEL[r.status]}</span> : null}{r.telegram ? <span className="st-tag sent" title="這筆有推播到 Telegram">已推播</span> : null}</td>
                     <td>{(() => { const mt = marketType(r.symbol); return mt ? <span className={`mt-tag ${mt}`}>{MARKET_LABEL[mt]}</span> : "—"; })()}</td>
                     <td style={{ whiteSpace: "nowrap" }}>{(() => { const o = ordinals.get(ordKey(r)); return o ? <><b>{o.n}</b><span className="sym"> / {o.of}</span></> : "—"; })()}</td>
                     <td>{r.close == null ? "—" : r.close.toPrecision(6)}</td>
@@ -598,7 +598,7 @@ export function ResearchBoard() {
                     <td>{r.taker == null ? "—" : r.taker.toFixed(3)}</td>
                     <td className={cls(r.oiChg)}>{pct(r.oiChg)}</td>
                     <OutCells o={r.out} />
-                    <td>{r.telegram ? "已送" : "—"}</td>
+                    <td>{r.telegram ? "已推播" : "—"}</td>
                     <td className="sym">{r.source === "live" ? "線上" : "回測"}</td>
                   </tr>
                 ))}
