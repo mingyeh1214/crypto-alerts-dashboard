@@ -335,3 +335,24 @@ td > .mt-tag:first-child { margin-left: 0; }
 .st-tag { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 6px; font-size: 0.7rem; line-height: 1.5; color: #7fa6d9; background: rgba(127, 166, 217, 0.12); white-space: nowrap; }
 .st-tag.error { color: var(--muted, #8b98a8); background: rgba(139, 152, 168, 0.12); }
 .st-tag.sent { color: #3cbe88; background: rgba(60, 190, 136, 0.12); }
+
+/* ---- 雙底掃描 ---- */
+.db-tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 6px; font-size: 0.72rem; line-height: 1.5; white-space: nowrap; font-style: normal; }
+.db-tag.brk { color: #3cbe88; background: rgba(60, 190, 136, 0.14); margin-left: 0; }
+.db-tag.form { color: #e4b15a; background: rgba(228, 177, 90, 0.14); }
+.db-tag.back { color: #e36d6d; background: rgba(227, 109, 109, 0.14); }
+.db-status { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; margin: 12px 0 4px; font-size: 0.86rem; }
+.db-legend { gap: 12px; font-size: 0.78rem; color: var(--muted); }
+.db-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.db-table td.tp { white-space: nowrap; }
+.db-table td.tp span { display: block; color: var(--muted); font-size: 0.74rem; }
+.db-table td.tp b { font-weight: 600; }
+.db-rules { margin-top: 26px; max-width: 52rem; }
+.db-rules h2 { font-size: 1.05rem; margin: 0 0 8px; }
+.db-rules ul { margin: 0; padding-left: 1.2rem; line-height: 1.7; color: var(--muted); font-size: 0.88rem; }
+.db-rules li b { color: var(--text, #dce3ea); }
+.db-rules .warn { color: #e4b15a; background: rgba(228, 177, 90, 0.08); border: 1px solid rgba(228, 177, 90, 0.3); border-radius: 8px; padding: 8px 12px; font-size: 0.88rem; }
+@media (max-width: 640px) {
+  .db-legend { display: none; }
+  .db-status { font-size: 0.8rem; }
+}

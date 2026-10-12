@@ -143,6 +143,15 @@ function mergeBars(a: Bar[], b: Bar[]) {
   return [...m.values()].sort((p, q) => p.time - q.time);
 }
 
+/** Optional chart-pattern overlay (e.g. double bottom). Times are bar opens in Unix seconds. */
+export type ChartPattern = {
+  l1: number; l1p: number;
+  h: number; hp: number;
+  l2: number; l2p: number;
+  brk?: number | null;          // breakout bar open (s), if any
+  label?: string;
+};
+
 export type ProChartProps = {
   symbol: string;
   spotSymbol: string;
@@ -153,9 +162,13 @@ export type ProChartProps = {
   onInterval: (iv: Interval) => void;
   onMarket: (m: Market) => void;
   onFocus?: (ms: number) => void;
+  pattern?: ChartPattern | null;
 };
 
-export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, market, onInterval, onMarket, onFocus }: ProChartProps) {
+export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, market, onInterval, onMarket, onFocus, pattern = null }: ProChartProps) {
+  const patternRef = useRef<ChartPattern | null>(pattern);
+  patternRef.current = pattern;
+  const patternKey = pattern ? `${pattern.l1}:${pattern.h}:${pattern.l2}:${pattern.brk ?? ""}:${pattern.hp}` : "";
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const legendRef = useRef<HTMLDivElement | null>(null);
@@ -306,6 +319,18 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
       marks.push({ time: t(bb), position: "belowBar", color: col, shape: "arrowUp", text: focus ? "爆量●" : "爆量", size: focus ? 1.6 : 1 });
       if (db !== bb && idx.has(db)) marks.push({ time: t(db), position: "aboveBar", color: col, shape: "arrowDown", text: "判斷" });
     }
+    const pt = patternRef.current;
+    if (pt) {
+      const at = (sec: number) => barOf(sec * 1000, step);
+      const add = (sec: number, m: Omit<SeriesMarker<Time>, "time">) => {
+        const b = at(sec);
+        if (idx.has(b)) marks.push({ ...m, time: t(b) } as SeriesMarker<Time>);
+      };
+      add(pt.l1, { position: "belowBar", color: "#4fa3ff", shape: "arrowUp", text: "L1" });
+      add(pt.l2, { position: "belowBar", color: "#4fa3ff", shape: "arrowUp", text: "L2" });
+      add(pt.h, { position: "aboveBar", color: "#e4b15a", shape: "arrowDown", text: "H" });
+      if (pt.brk != null) add(pt.brk, { position: "aboveBar", color: "#3cbe88", shape: "circle", text: "突破" });
+    }
     marks.sort((a, b) => (a.time as number) - (b.time as number));
     sigBarsRef.current = byBar;
     markersRef.current?.setMarkers(marks);
@@ -314,7 +339,8 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
       const dec = decimalsFor(last.close);
       candleRef.current.applyOptions({ priceFormat: { type: "price", precision: dec, minMove: 10 ** -dec } });
     }
-  }, [prefs, signals, step, focusMs]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefs, signals, step, focusMs, patternKey]);
 
   const legendHtml = useCallback(
     (i: number) => {
@@ -424,6 +450,14 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
     if (!ch || !d.bars.length) return;
     const n = d.bars.length;
     let i = n - 1;
+    const pt = patternRef.current;
+    if (pt) {
+      // Whole pattern in view: from a bit before L1 to the latest bar.
+      let l1i = idxRef.current.get(barOf(pt.l1 * 1000, step));
+      if (l1i == null) l1i = Math.max(0, n - 130);
+      ch.timeScale().setVisibleLogicalRange({ from: Math.min(l1i - 30, n - 60), to: n + 4 });
+      return;
+    }
     if (focusMs != null) {
       const fb = barOf(focusMs - 1, step);
       const fi = idxRef.current.get(fb);
@@ -622,6 +656,28 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
       s.createPriceLine({ price: 0, color: "#5a6676", lineStyle: LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false });
       reg.push((c) => s.setData(c.bars.filter((b) => c.prem.has(b.time)).map((b) => ({ time: t(b.time), value: c.prem.get(b.time)! * 100 }))));
     }
+    // Pattern overlay: dashed neckline from L1 to the latest bar, thin L1-H-L2 outline.
+    {
+      const neck = chart.addSeries(LineSeries, { color: "#e4b15a", lineWidth: 2, lineStyle: LineStyle.Dashed, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, title: "" });
+      const w = chart.addSeries(LineSeries, { color: "rgba(79,163,255,0.75)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+      reg.push((c) => {
+        const pt = patternRef.current;
+        if (!pt || !c.bars.length) {
+          neck.setData([]);
+          w.setData([]);
+          return;
+        }
+        const b1 = barOf(pt.l1 * 1000, step);
+        const last = c.bars[c.bars.length - 1].time;
+        neck.setData(c.bars.filter((b) => b.time >= b1 && b.time <= last).map((b) => ({ time: t(b.time), value: pt.hp })));
+        const pts = [[pt.l1, pt.l1p], [pt.h, pt.hp], [pt.l2, pt.l2p]]
+          .map(([s0, v]) => [barOf(s0 * 1000, step), v] as const)
+          .filter(([b]) => idxRef.current.has(b) || c.bars.some((x) => x.time === b));
+        const uniq = new Map<number, number>();
+        for (const [b, v] of pts) uniq.set(b, v);
+        w.setData([...uniq.entries()].sort((a, z) => a[0] - z[0]).map(([b, v]) => ({ time: t(b), value: v })));
+      });
+    }
     regRef.current = reg;
     // Main pane ~5.5x a sub-pane; the stage grows with the number of sub-panes (CSS --panes).
     chart.panes().forEach((pn, k) => pn.setStretchFactor(k === 0 ? 5.5 : 1));
@@ -675,7 +731,7 @@ export function ProChart({ symbol, spotSymbol, signals, focusMs, interval, marke
       /* chart is removed on the next build or unmount */
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status.kind, loadId, prefs, prefsReady, interval, perp, signalsKey]);
+  }, [status.kind, loadId, prefs, prefsReady, interval, perp, signalsKey, patternKey]);
 
   const setHlinesFromChart = (f: (xs: number[]) => number[]) => {
     setHlines((xs) => {

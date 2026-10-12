@@ -7,6 +7,7 @@ const LINKS = [
   { href: "/", label: "規則" },
   { href: "/signals", label: "訊號" },
   { href: "/live", label: "即時" },
+  { href: "/double-bottom", label: "雙底掃描" },
 ];
 
 export function Nav() {
